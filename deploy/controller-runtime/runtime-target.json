@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "controller_version": "0.8.55",
+  "platform": {
+    "system": "Linux",
+    "machine": "x86_64",
+    "glibc_minimum": "2.35"
+  },
+  "python": {
+    "implementation": "CPython",
+    "major_minor": "3.10",
+    "validated_patch": "3.10.12",
+    "abi": "cp310"
+  },
+  "dependencies": {
+    "lock": "deploy/controller-runtime/requirements-controller-linux-py310.lock",
+    "wheelhouse": "deploy/controller-runtime/wheelhouse/linux-x86_64-py310",
+    "wheel_count": 21,
+    "only_binary": true,
+    "require_hashes": true
+  }
+}
