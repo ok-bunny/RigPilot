@@ -1,0 +1,14 @@
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    all-ethernet:
+      match:
+        name: "e*"
+      dhcp4: true
+      dhcp6: true
+      optional: true
+      dhcp4-overrides:
+        route-metric: 100
+      dhcp6-overrides:
+        route-metric: 100
