@@ -1,0 +1,31 @@
+RigPilot Windows CPU Temperature Helper - Third-Party Notices
+==============================================================
+
+This helper uses the following pinned NuGet components. Their original license
+terms remain applicable. RigPilot does not modify their source code.
+
+* LibreHardwareMonitorLib 0.9.6 - Mozilla Public License 2.0
+  Source: https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/tree/v0.9.6
+  License: https://licenses.nuget.org/MPL-2.0
+* DiskInfoToolkit 1.1.2 - Mozilla Public License 2.0
+  Source: https://github.com/Blacktempel/DiskInfoToolkit
+* RAMSPDToolkit-NDD 1.4.2 - Mozilla Public License 2.0
+  Source: https://github.com/Blacktempel/RAMSPDToolkit
+* BlackSharp.Core 1.0.7 - Mozilla Public License 2.0
+  Source: https://github.com/Blacktempel/BlackSharp
+* HidSharp 2.6.4 - Apache License 2.0
+  Project: https://software.seekye.com/hidsharp
+  License: https://www.apache.org/licenses/LICENSE-2.0
+* Microsoft System.IO.Ports 10.0.3, System.Management 10.0.2,
+  System.Threading.AccessControl 10.0.3, System.Memory 4.6.3, and
+  System.CodeDom 10.0.2 - MIT License
+  Source: https://github.com/dotnet/runtime
+  License: https://github.com/dotnet/runtime/blob/main/LICENSE.TXT
+
+The helper targets the Windows .NET Framework 4.7.2 runtime and does not bundle
+a separate .NET runtime. The exact resolved package versions and integrity hashes are recorded in the
+source distribution's packages.lock.json. Corresponding source is available at
+the links above. Complete applicable license texts and the upstream
+LibreHardwareMonitor third-party notices are included in the adjacent LICENSES
+directory. No NVIDIA or motherboard monitoring software is bundled or required
+by this CPU-only helper.
