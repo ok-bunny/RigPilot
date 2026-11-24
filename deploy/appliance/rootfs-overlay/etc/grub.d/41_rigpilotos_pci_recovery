@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+
+# Keep the normal Ubuntu entry first and unchanged.  These two entries are
+# explicit recovery choices for firmware that did not allocate a usable
+# NVIDIA BAR1 window.  The ACPI fallback is intentionally never selected
+# automatically because pci=nocrs ignores firmware host-bridge windows.
+kernel="$(readlink -f /boot/vmlinuz)"
+initrd="$(readlink -f /boot/initrd.img)"
+case "${kernel}" in /boot/vmlinuz-*) ;; *) exit 0 ;; esac
+case "${initrd}" in /boot/initrd.img-*) ;; *) exit 0 ;; esac
+kernel_name="${kernel#/boot/}"
+initrd_name="${initrd#/boot/}"
+root_device="$(grub-probe --target=device /)"
+root_uuid="$(grub-probe --device "${root_device}" --target=fs_uuid)"
+case "${root_uuid}" in
+    *[!A-Za-z0-9-]*|'') exit 0 ;;
+esac
+
+cat <<EOF
+menuentry 'RigPilotOS NVIDIA PCI BAR recovery' --id rigpilotos-pci-realloc {
+    insmod part_gpt
+    insmod ext2
+    search --no-floppy --fs-uuid --set=root ${root_uuid}
+    linux /boot/${kernel_name} root=UUID=${root_uuid} ro console=tty0 console=ttyS0,115200n8 quiet pcie_aspm=off pci=realloc=on
+    initrd /boot/${initrd_name}
+}
+menuentry 'RigPilotOS NVIDIA PCI BAR recovery (advanced ACPI fallback)' --id rigpilotos-pci-nocrs {
+    insmod part_gpt
+    insmod ext2
+    search --no-floppy --fs-uuid --set=root ${root_uuid}
+    linux /boot/${kernel_name} root=UUID=${root_uuid} ro console=tty0 console=ttyS0,115200n8 quiet pcie_aspm=off pci=realloc=on,nocrs
+    initrd /boot/${initrd_name}
+}
+EOF
