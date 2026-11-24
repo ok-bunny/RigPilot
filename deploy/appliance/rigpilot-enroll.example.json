@@ -1,0 +1,4 @@
+{
+  "schema": "rigpilot.enrollment.v1",
+  "enrollment_token": "rpe_REPLACE_WITH_CONTROLLER_GENERATED_ONE_TIME_TOKEN"
+}

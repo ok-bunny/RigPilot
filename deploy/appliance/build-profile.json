@@ -1,0 +1,13 @@
+{
+  "next_release": "0.2.12",
+  "nvidia": {
+    "driver_version": "615.78.08"
+  },
+  "rootfs_recipe": {
+    "mkfs_options": "-F -L RIGPILOT_ROOT -m 0 -O ^metadata_csum_seed,^orphan_file,metadata_csum,64bit",
+    "required_absent_features": [
+      "metadata_csum_seed",
+      "orphan_file"
+    ]
+  }
+}
