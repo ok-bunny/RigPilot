@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#22252a">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <script src="/static/theme-init.js?v=0.8.55-public-1"></script>
+  <title>RigPilot · 设备控制台</title>
+  <link rel="stylesheet" href="/static/styles.css?v=0.8.55-public-1">
+</head>
+<body>
+  <div id="loginView" class="login-shell">
+    <div class="login-art" aria-hidden="true">
+      <div class="grid-glow"></div>
+      <div class="signal-card signal-card-a">
+        <span class="signal-dot"></span>
+        <div><strong>设备状态</strong><small>由已接入设备实时上报</small></div>
+        <span class="mini-wave">⌁</span>
+      </div>
+      <div class="signal-card signal-card-b">
+        <span class="signal-dot"></span>
+        <div><strong>配置管理</strong><small>飞行表与任务统一可见</small></div>
+        <span class="mini-wave">⌁</span>
+      </div>
+      <div class="hero-copy">
+        <span class="eyebrow">SELF-HOSTED CONTROL PLANE</span>
+        <h1>设备在远方，<br>状态在眼前。</h1>
+        <p>面向自有 Ubuntu 与 Windows 设备的安全监控和远程运维。</p>
+      </div>
+    </div>
+    <main class="login-panel">
+      <form id="loginForm" class="login-form">
+        <div class="brand brand-dark"><span class="brand-mark">R</span><span>RigPilot</span></div>
+        <div class="login-heading">
+          <p class="section-kicker">欢迎回来</p>
+          <h2>登录控制台</h2>
+          <p>使用服务器管理员创建的账号。</p>
+        </div>
+        <label>用户名<input id="username" name="username" autocomplete="section-rigpilot-controller username" autocapitalize="none" spellcheck="false" required></label>
+        <label>密码<input id="password" name="password" type="password" autocomplete="section-rigpilot-controller current-password" required></label>
+        <button class="btn btn-primary btn-wide" type="submit"><span>登录</span><span>→</span></button>
+        <p id="loginError" class="form-error" role="alert"></p>
+        <p class="security-note"><span>◆</span> 凭据仅发送到你的自托管服务器</p>
+      </form>
+    </main>
+  </div>
+
+  <div id="appView" class="app-shell hidden">
+    <aside id="mainSidebar" class="sidebar">
+      <div class="brand"><span class="brand-mark">R</span><span class="brand-copy"><span>RigPilot</span><small id="controllerVersion">控制端 v—</small></span></div>
+      <nav class="nav-list" aria-label="主导航">
+        <button class="nav-item active" data-page="dashboard" type="button" aria-label="总览" title="总览"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span><span class="nav-label">总览</span></button>
+        <button class="nav-item" data-page="devices" type="button" aria-label="设备" title="设备"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg></span><span class="nav-label">设备</span><span id="deviceBadge" class="nav-badge">0</span></button>
+        <button class="nav-item admin-only" data-page="agentReleases" type="button" aria-label="被控端版本" title="被控端版本"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3m0 0L8 7m4-4 4 4"/><path d="M4 15v5h16v-5"/></svg></span><span class="nav-label">被控端版本</span></button>
+        <button class="nav-item" data-page="wallets" type="button" aria-label="钱包" title="钱包"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 9h18M16 14h3"/></svg></span><span class="nav-label">钱包</span></button>
+        <button class="nav-item" data-page="pools" type="button" aria-label="矿池" title="矿池"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span><span class="nav-label">矿池</span></button>
+        <button class="nav-item" data-page="miners" type="button" aria-label="矿工软件库" title="矿工软件库"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5v10l-9 5-9-5V7z"/><path d="m3 7 9 5 9-5M12 12v10"/></svg></span><span class="nav-label">矿工软件库</span></button>
+        <button class="nav-item" data-page="flights" type="button" aria-label="飞行表" title="飞行表"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h17m0 0-4-4m4 4-4 4M21 17H4m0 0 4-4m-4 4 4 4"/></svg></span><span class="nav-label">飞行表</span></button>
+        <button class="nav-item" data-page="workload" type="button" aria-label="工作量" title="工作量"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9m5 10V5m5 14v-8m5 8V3"/><path d="M3 21h18"/></svg></span><span class="nav-label">工作量</span></button>
+        <button class="nav-item admin-only" data-page="access" type="button" aria-label="系统设置" title="系统设置"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 14 4l2.5-.4.8 2.4 2.4.9-.4 2.5 1.5 2-1.5 2 .4 2.5-2.4.9-.8 2.4L14 20l-2 1.5L10 20l-2.5.4-.8-2.4-2.4-.9.4-2.5-1.5-2 1.5-2-.4-2.5 2.4-.9.8-2.4L10 4z"/><circle cx="12" cy="12" r="3"/></svg></span><span class="nav-label">系统设置</span></button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="secure-pill"><span class="pulse-dot"></span><span class="secure-label">控制平面运行中</span></div>
+        <button id="logoutButton" class="user-chip" aria-label="退出登录" title="退出登录">
+          <span id="userAvatar" class="avatar">A</span>
+          <span class="user-copy"><strong id="currentUsername">—</strong><small id="currentRole">管理员</small></span>
+          <span class="logout-icon">↪</span>
+        </button>
+      </div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <div>
+          <p id="pageKicker" class="section-kicker">CONTROL CENTER</p>
+          <h1 id="pageTitle">设备总览</h1>
+        </div>
+        <div class="topbar-actions">
+          <span id="lastRefresh" class="last-refresh">尚未刷新</span>
+          <button id="refreshButton" class="icon-button" type="button" title="刷新" aria-label="刷新设备数据"><span class="refresh-icon" aria-hidden="true">↻</span></button>
+          <button class="btn btn-primary admin-only" data-open-enroll><span>＋</span> 接入设备</button>
+        </div>
+      </header>
+
+      <main class="content">
+        <section id="dashboardPage" class="page active">
+          <div class="page-intro"><div><p class="section-kicker">FLEET OVERVIEW</p><h2>我的矿场</h2><p>设备与运行状态，按实时上报展示。</p></div></div>
+
+
+          <div class="summary-grid overview-summary-grid">
+            <article class="summary-card summary-total"><div class="summary-icon">▦</div><div><span>设备总数</span><strong id="summaryTotal">0</strong><small>已登记设备</small></div></article>
+            <article class="summary-card"><div class="summary-icon icon-green">●</div><div><span>在线设备</span><strong id="summaryOnline">0</strong><small id="onlineRatio">0% 可用</small></div></article>
+            <article class="summary-card summary-hashrate"><div class="summary-icon icon-blue">◉</div><div><span>总算力</span><div id="summaryHashrateGroups" class="summary-breakdown" role="list" aria-label="按币种显示新鲜算力"><span class="summary-hashrate-empty" role="listitem">—</span></div></div></article>
+            <article class="summary-card"><div class="summary-icon icon-amber">ϟ</div><div><span>已上报 GPU 功耗</span><strong id="summaryGpuPower">—</strong><small id="summaryGpuPowerNote">仅在线设备的已上报显卡，不含主机功耗</small></div></article>
+          </div>
+          <div class="fleet-status-strip" aria-label="运行状态摘要"><span title="各已配置矿工均已上报新鲜的正值算力"><i class="status-marker is-mining"></i>有算力设备 <strong id="summaryNormalMining">0</strong></span><span><i class="status-marker is-alert"></i>告警 <strong id="summaryAlerts">0</strong></span><span><i class="status-marker is-command"></i>执行中 <strong id="summaryCommands">0</strong></span></div>
+
+          <section class="panel hashrate-history-panel">
+            <div class="panel-head">
+              <div><p class="section-kicker">HASHRATE · 24H</p><h2>24 小时币种算力</h2></div>
+              <small id="hashrateHistoryMeta" class="hashrate-history-meta">每 5 分钟聚合</small>
+            </div>
+            <div id="hashrateHistoryChart" class="hashrate-history-chart" aria-live="polite">
+              <div class="hashrate-history-state">正在读取算力历史…</div>
+            </div>
+          </section>
+
+          <section class="panel overview-device-panel">
+            <div class="panel-head"><div><p class="section-kicker">REGISTERED DEVICES</p><h2>设备概览</h2></div><button class="text-button" type="button" data-page-link="devices">设备管理与批量应用 <span aria-hidden="true">→</span></button></div>
+            <div class="overview-device-toolbar"><div class="filter-tabs" role="group" aria-label="总览设备系统筛选"><button class="filter-tab active" type="button" data-overview-os="all" aria-pressed="true">全部设备</button><button class="filter-tab" type="button" data-overview-os="linux" aria-pressed="false">Linux</button><button class="filter-tab" type="button" data-overview-os="windows" aria-pressed="false">Windows</button></div><div class="search-box"><span aria-hidden="true">⌕</span><input id="overviewDeviceSearch" type="search" aria-label="搜索总览设备" placeholder="搜索设备、主机名、矿工或币种"></div></div>
+            <div class="table-wrap"><table class="device-table overview-device-table"><thead><tr><th>设备</th><th>状态/<wbr>最后在线时间</th><th>币种</th><th>挖矿软件</th><th>CPU/GPU 概览</th><th>算力</th><th>GPU 功耗</th></tr></thead><tbody id="overviewDeviceTableBody"></tbody></table></div>
+            <div id="overviewDeviceEmpty" class="empty-state compact hidden"><div class="empty-orbit">⌕</div><h3>没有匹配的设备</h3><p>检查搜索词或系统筛选；未接入设备时可使用右上角的接入入口。</p></div>
+          </section>
+
+
+
+
+
+        </section>
+
+        <section id="devicesPage" class="page pinned-page device-list-page">
+          <div class="page-intro device-list-intro"><div><p class="section-kicker">DEVICES</p><h2>设备总览</h2><p>按实际状态筛选设备，打开行可查看详情与逐卡设置。</p></div></div>
+          <div class="toolbar">
+            <div class="search-box"><span>⌕</span><input id="deviceSearch" type="search" placeholder="搜索名称、备注、主机名、系统或网络地址"></div>
+            <div class="filter-tabs" role="group" aria-label="设备筛选">
+              <button class="filter-tab active" data-filter="all">全部</button><button class="filter-tab" data-filter="online">在线</button><button class="filter-tab" data-filter="offline">离线</button><button class="filter-tab" data-filter="alerts">异常</button>
+            </div>
+            <div class="device-toolbar-actions">
+              <button id="clearConfigurationRefreshBadgesButton" class="btn btn-secondary btn-small" type="button" disabled aria-label="清除全部已完成提示">清除已完成提示</button>
+              <button id="openFlightBatchApplyButton" class="btn btn-secondary operator-only" type="button">批量应用飞行表</button>
+              <button id="openMiningStopBatchButton" class="btn btn-secondary operator-only" type="button">批量停止挖矿</button>
+              <button id="openMiningRestartBatchButton" class="btn btn-secondary operator-only" type="button">批量重启挖矿</button>
+            </div>
+          </div>
+          <section class="panel table-panel pinned-scroll-panel">
+            <div class="table-wrap">
+              <table class="device-table fleet-device-table">
+                <colgroup>
+                  <col class="fleet-col-device"><col class="fleet-col-status"><col class="fleet-col-coin"><col class="fleet-col-miner"><col class="fleet-col-hashrate"><col class="fleet-col-cpu"><col class="fleet-col-memory"><col class="fleet-col-gpu"><col class="fleet-col-agent"><col class="fleet-col-actions">
+                </colgroup>
+                <thead><tr><th class="fleet-col-device">设备</th><th class="fleet-col-status">状态/<wbr>最后在线时间</th><th class="fleet-col-coin">币种</th><th class="fleet-col-miner">挖矿软件</th><th class="fleet-col-hashrate">算力</th><th class="fleet-col-cpu">CPU</th><th class="fleet-col-memory">内存</th><th class="fleet-col-gpu">GPU</th><th class="fleet-col-agent">被控端版本</th><th class="fleet-col-actions">设备状态/操作</th></tr></thead>
+                <tbody id="deviceTableBody"></tbody>
+              </table>
+            </div>
+            <div id="deviceEmpty" class="empty-state compact hidden"><div class="empty-orbit">⌕</div><h3>没有匹配的设备</h3><p>尝试调整搜索条件或筛选项。</p></div>
+          </section>
+        </section>
+
+        <section id="walletsPage" class="page pinned-page resource-library-page">
+          <section class="panel table-panel resource-panel pinned-scroll-panel">
+            <div class="panel-head resource-head"><div><p class="section-kicker">PAYOUT</p><h2>钱包地址</h2></div><button id="addWalletButton" class="btn btn-primary operator-only">＋ 添加钱包</button></div>
+            <div class="table-wrap"><table class="device-table resource-table"><thead><tr><th>名称</th><th>币种</th><th>公开地址</th><th>备注</th><th>创建者</th><th></th></tr></thead><tbody id="walletTableBody"></tbody></table></div>
+            <div id="walletEmpty" class="empty-state compact hidden"><div class="empty-orbit">◈</div><h3>还没有钱包</h3><p>添加公开收款地址后可在飞行表中引用。</p></div>
+          </section>
+        </section>
+
+        <section id="poolsPage" class="page pinned-page resource-library-page">
+          <section class="panel table-panel resource-panel pinned-scroll-panel">
+            <div class="panel-head resource-head"><div><p class="section-kicker">SAVED POOLS</p><h2>矿池</h2><small>保存常用地址；选择时复制到飞行表，之后修改此记录不会更改或下发已有飞行表。</small></div><button id="addPoolButton" class="btn btn-primary operator-only" type="button">＋ 添加矿池</button></div>
+            <div class="table-wrap"><table class="device-table resource-table pool-table"><thead><tr><th>名称</th><th>币种</th><th>矿池 URL</th><th>协议</th><th>密码</th><th>备注</th><th>创建者</th><th></th></tr></thead><tbody id="poolTableBody"></tbody></table></div>
+            <div id="poolEmpty" class="empty-state compact hidden"><div class="empty-orbit">◎</div><h3>还没有保存的矿池</h3><p>添加后可在新建或编辑飞行表时明确选择，也可继续手工输入地址。</p></div>
+          </section>
+        </section>
+
+        <section id="minersPage" class="page pinned-page resource-library-page">
+          <section class="panel table-panel resource-panel pinned-scroll-panel">
+            <div class="panel-head resource-head"><div><p class="section-kicker">MINER PACKAGES</p><h2>矿工软件库</h2></div><button id="addMinerPackageButton" class="btn btn-primary operator-only">＋ 登记软件包</button></div>
+            <div class="table-wrap"><table class="device-table resource-table miner-package-table"><thead><tr><th>软件 / 版本</th><th>格式</th><th>来源</th><th>文件</th><th>备注</th><th>创建者</th><th></th></tr></thead><tbody id="minerPackageTableBody"></tbody></table></div>
+            <div id="minerPackageEmpty" class="empty-state compact hidden"><div class="empty-orbit">⬡</div><h3>还没有矿工软件包</h3><p>上传压缩包或从 HTTPS 地址导入后，可在主挖或双挖配置中选择。</p></div>
+          </section>
+        </section>
+
+        <section id="agentReleasesPage" class="page admin-only">
+          <section class="panel table-panel resource-panel pinned-scroll-panel agent-release-library-panel">
+            <div class="panel-head resource-head agent-release-head"><div><p class="section-kicker">AGENT RELEASES</p><h2>被控端版本库</h2><small>支持 Windows x64 ZIP 与 Linux x64 在线更新 TAR.GZ；批量更新必须逐台明确勾选，绝不默认批量更新任何设备。</small></div><div class="table-row-actions"><label class="agent-release-platform-filter"><span>平台筛选</span><select id="agentReleasePlatformFilter" title="平台筛选"><option value="all">全部</option><option value="windows">Windows</option><option value="linux">Linux</option></select></label><button id="openAgentBatchUpdateButton" class="btn btn-secondary admin-only" type="button">批量更新</button><button id="addAgentReleaseButton" class="btn btn-primary admin-only" type="button">＋ 上传被控端</button></div></div>
+            <div class="table-wrap"><table class="device-table resource-table agent-release-table"><thead><tr><th>版本</th><th>目标平台</th><th>文件 / 大小</th><th>SHA-256</th><th>备注</th><th>上传者 / 时间</th><th></th></tr></thead><tbody id="agentReleaseTableBody"></tbody></table></div>
+            <div id="agentReleaseEmpty" class="empty-state compact hidden"><div class="empty-orbit">⇧</div><h3>还没有匹配的被控端版本</h3><p>上传包含更新协议清单的 Windows ZIP 或 Linux 在线更新 TAR.GZ 后，可指定一台兼容设备灰度更新。</p></div>
+          </section>
+          <section class="panel table-panel resource-panel agent-update-history-panel">
+            <div class="panel-head resource-head"><div><p class="section-kicker">ROLLING UPDATE</p><h2>指定设备更新记录</h2><small>“成功”表示目标版本 Agent 已连续完成至少 2 次鉴权心跳并确认激活；仅下载或启动更新器不算成功。</small></div><button id="clearAgentUpdateHistoryButton" class="btn btn-secondary btn-small danger-outline admin-only" type="button">清理记录</button></div>
+            <div class="table-wrap"><table class="device-table resource-table agent-update-table"><thead><tr><th>设备</th><th>版本</th><th>状态</th><th>包</th><th>创建者 / 时间</th><th></th></tr></thead><tbody id="agentUpdateTableBody"></tbody></table></div>
+            <div id="agentUpdateEmpty" class="empty-state compact hidden"><div class="empty-orbit">↻</div><h3>还没有更新记录</h3><p>从上方版本行点击“指定设备下发”开始单机灰度。</p></div>
+          </section>
+        </section>
+
+        <section id="flightsPage" class="page pinned-page resource-library-page">
+          <section class="panel table-panel resource-panel pinned-scroll-panel">
+            <div class="panel-head resource-head"><div><p class="section-kicker">FLIGHT SHEETS</p><h2>飞行表</h2></div><div class="flight-toolbar-actions"><button id="addFlightButton" class="btn btn-primary operator-only">＋ 新建飞行表</button></div></div>
+            <div class="table-wrap flight-card-wrap"><table class="device-table resource-table flight-table"><thead><tr><th>名称</th><th>币种</th><th>挖矿软件</th><th>钱包</th><th>矿池</th><th>使用设备</th><th></th></tr></thead><tbody id="flightTableBody"></tbody></table></div>
+            <div id="flightEmpty" class="empty-state compact hidden"><div class="empty-orbit">⇄</div><h3>还没有飞行表</h3><p>需要先添加至少一个同币种钱包。</p></div>
+          </section>
+        </section>
+
+        <section id="workloadPage" class="page workload-page">
+          <div class="page-intro"><div><p class="section-kicker">WORKLOAD</p><h2>工作量</h2><p>查询估算工作量、设备占比和本地收益分配。</p></div></div>
+          <section id="workloadPanel" class="panel workload-panel">
+            <div class="panel-head workload-page-head"><div><p class="section-kicker">DEVICE WORK · 14D</p><h2>设备工作量（估算）</h2><small>选择币种并设置权重，按设备显示统一折算工作量；原始积分保持不变</small></div></div>
+            <div class="workload-panel-body">
+              <form id="workloadRangeForm" class="workload-range-form">
+                <div class="workload-presets" role="group" aria-label="工作量时间快捷筛选">
+                  <button class="btn btn-secondary btn-small active" type="button" data-workload-preset="24">24 小时</button>
+                  <button class="btn btn-secondary btn-small" type="button" data-workload-preset="168">7 天</button>
+                  <button class="btn btn-secondary btn-small" type="button" data-workload-preset="336">14 天</button>
+                </div>
+                <label>开始时间<span class="workload-datetime-shell"><input id="workloadFrom" type="datetime-local" required><svg class="workload-datetime-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></svg></span></label>
+                <label>结束时间<span class="workload-datetime-shell"><input id="workloadTo" type="datetime-local" required><svg class="workload-datetime-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></svg></span></label>
+                <label>设备<select id="workloadAgent"><option value="">全部设备</option></select></label>
+                <select id="workloadAlgorithm" hidden aria-hidden="true" tabindex="-1"><option value=""></option></select>
+                <label>分配总金额<input id="workloadRevenueTotal" type="number" min="0" step="any" inputmode="decimal" autocomplete="off" placeholder="例如 1000" aria-describedby="workloadRevenueHint" disabled></label>
+                <button id="workloadQueryButton" class="btn btn-primary btn-small" type="submit">查询工作量</button>
+                <small id="workloadRevenueHint" class="workload-revenue-hint">设置权重后按加权占比分配</small>
+              </form>
+              <section class="workload-coin-settings" aria-label="工作量币种筛选与权重">
+                <div class="workload-coin-mode" role="group" aria-label="币种选择方式"><button class="btn btn-secondary btn-small" type="button" data-workload-coin-mode="single">单选</button><button class="btn btn-secondary btn-small" type="button" data-workload-coin-mode="multiple">多选</button></div>
+                <div id="workloadCoinOptions" class="workload-coin-options" role="group" aria-label="选择统计币种"></div>
+                <p>每币种权重表示 <b>1 GH（10⁹ H）对应的折算单位 WU</b>。需填写有限的非负数；空白表示尚未设置，0 表示零贡献。</p>
+                <div id="workloadCoinWeights" class="workload-coin-weights"></div>
+                <small id="workloadWeightsStatus" aria-live="polite">币种选择与权重按账号保存在当前浏览器</small>
+              </section>
+              <details id="workloadOwnersPanel" class="workload-owner-settings">
+                <summary>归属分组</summary>
+                <p>自定义哪些矿工属于同一个人，按人汇总工作量和分配金额；未分组矿工独立显示。</p>
+                <div class="workload-owner-actions"><button id="workloadOwnerAdd" class="btn btn-secondary btn-small" type="button">新增归属人</button><button id="workloadOwnerReload" class="btn btn-secondary btn-small" type="button" title="成功载入后会替代当前未保存的草稿">载入服务器归属</button><button id="workloadOwnerImport" class="btn btn-secondary btn-small" type="button" title="将旧浏览器分组替代当前账号的服务器归属" hidden>导入旧浏览器分组</button></div>
+                <small>成功载入会替代未保存草稿；导入旧浏览器分组会替代当前账号的服务器归属。</small>
+                <div id="workloadOwnerNotice" class="form-error" role="status"></div>
+                <div id="workloadOwnerGroups" class="workload-owner-groups"></div>
+                <form id="workloadOwnerForm" class="workload-owner-form" hidden>
+                  <label>人名<input id="workloadOwnerName" type="text" maxlength="80" autocomplete="off" required></label>
+                  <div id="workloadOwnerAgents" class="workload-owner-agent-picker" role="group" aria-label="选择归属矿工"></div>
+                  <small>一台矿工只能属于一人；保存会将选中矿工重分配给此人。</small>
+                  <div class="workload-owner-actions"><button class="btn btn-primary btn-small" type="submit">保存归属</button><button id="workloadOwnerCancel" class="btn btn-secondary btn-small" type="button">取消</button></div>
+                  <div id="workloadOwnerError" class="form-error" role="alert"></div>
+                </form>
+                <small id="workloadOwnersStatus" aria-live="polite">归属按登录账号保存在服务器。</small>
+              </details>
+              <form id="workloadSettlementNoteForm" class="workload-settlement-form">
+                <label for="workloadSettlementNote">结算时间（持久保存）
+                  <span class="workload-datetime-shell"><input id="workloadSettlementNote" type="datetime-local" step="300" autocomplete="off"><svg class="workload-datetime-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></svg></span>
+                </label>
+                <div class="workload-settlement-actions">
+                  <button id="workloadSettlementNoteSave" class="btn btn-secondary btn-small operator-only" type="submit" disabled>保存结算时间</button>
+                  <button id="workloadSettlementUseAsStart" class="btn btn-secondary btn-small" type="button" disabled>设为工作量开始时间</button>
+                </div>
+                <span id="workloadSettlementNoteStatus" class="workload-settlement-status" aria-live="polite">正在读取结算时间…</span>
+                <span id="workloadSettlementLegacyNote" class="workload-settlement-legacy hidden" aria-live="polite"></span>
+              </form>
+              <p class="workload-range-note">最长可查询 14 天。当前为估算工作量/算力积分（H），不等同于矿池难度确认；设备离线后，已记录的历史工作量仍会保留。本次所选时间段按当前手设权重折算；选中币种共同决定分子和全矿场分母。总金额在当前页面按加权占比分配，不上传；权重不修改原始历史、钱包、矿池或实际挖矿。</p>
+              <div id="workloadError" class="form-error" role="alert"></div>
+              <div id="workloadSummary" class="workload-summary" aria-live="polite">
+                <div class="workload-state">进入工作量页面后读取统计</div>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section id="accessPage" class="page">
+          <div class="page-intro"><div><p class="section-kicker">SETTINGS</p><h2>系统设置</h2><p>控制端运行状态为只读；用户与设备接入仍按管理员权限管理。</p></div></div>
+          <section class="panel controller-status-panel">
+            <div class="panel-head">
+              <div><p class="section-kicker">CONTROLLER HOST</p><h2>控制端本机状态</h2></div>
+              <small id="controllerStatusMeta" class="controller-status-meta">等待采样</small>
+            </div>
+            <div id="controllerStatusGrid" class="controller-metric-grid" aria-live="polite"></div>
+          </section>
+          <section class="panel setup-settings-panel admin-only">
+            <div class="panel-head"><div><p class="section-kicker">安装帮助</p><h2>首次安装向导</h2></div><button id="openSetupButton" class="btn btn-secondary" type="button">重新打开向导</button></div>
+            <p id="setupStatus" class="panel-note" aria-live="polite">可打开向导查看安装步骤</p>
+          </section>
+          <div class="access-grid">
+            <section class="panel access-card">
+              <div class="access-icon">＋</div><p class="section-kicker">ENROLLMENT</p><h2>接入新设备</h2><p>生成一次性、短时有效的注册码。每个注册码只能成功使用一次。</p><button class="btn btn-primary" data-open-enroll>生成注册码</button>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><div><p class="section-kicker">USERS</p><h2>控制台用户</h2></div><div class="access-user-actions"><button id="changePasswordButton" class="btn btn-secondary admin-only" type="button">修改我的密码</button><button id="addUserButton" class="btn btn-secondary" type="button">＋ 添加用户</button></div></div>
+              <p class="panel-note access-note">只有管理员可以添加或删除控制台账号；不能删除当前登录账号，系统也会保护最后一个可用管理员。</p>
+              <div id="userList" class="user-list"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="backdrop" class="backdrop hidden"></div>
+  <aside id="deviceDrawer" class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerName" aria-hidden="true">
+    <div class="drawer-head"><div><p class="section-kicker">DEVICE</p><h2 id="drawerName">设备详情</h2></div><button class="icon-button" type="button" data-close-drawer aria-label="关闭设备详情">×</button></div>
+    <div id="drawerContent" class="drawer-content"></div>
+  </aside>
+
+  <dialog id="liveMinerLogDialog" class="modal modal-large miner-live-dialog" aria-labelledby="liveMinerLogTitle">
+    <section class="modal-card">
+      <div class="modal-head">
+        <div><p class="section-kicker">LIVE MINER LOG</p><h2 id="liveMinerLogTitle"><span id="liveMinerLogAgentName">设备</span> · 实时矿工日志</h2></div>
+        <div class="miner-live-head-status">
+          <strong id="liveMinerLogStatus" class="miner-live-status is-active">正在启动</strong>
+          <small id="liveMinerLogDetail">等待第一份日志快照</small>
+        </div>
+        <button class="icon-button" type="button" data-close-dialog aria-label="关闭实时日志并停止接收">×</button>
+      </div>
+      <div id="liveMinerLogTabs" class="miner-live-tabs" hidden></div>
+      <div id="liveMinerLogOutput" class="miner-live-output" role="log" aria-label="实时矿工日志"></div>
+      <div class="miner-live-footer">
+        <div class="miner-live-legend" aria-label="日志高亮图例">
+          <span class="is-error">ERROR</span><span class="is-warning">WARN</span><span class="is-success">OK</span><span class="is-share">SHARE</span><span class="is-hashrate">RATE</span><span class="is-pool">POOL</span>
+        </div>
+        <div class="modal-actions"><button id="clearLiveMinerLogsButton" class="btn btn-secondary" type="button">清空</button><button class="btn btn-primary" type="button" data-close-dialog title="仅在此窗口打开时连续请求；关闭后立即停止。">关闭并停止</button></div>
+      </div>
+    </section>
+  </dialog>
+
+  <dialog id="minerCacheDialog" class="modal modal-large miner-cache-dialog" aria-labelledby="minerCacheTitle">
+    <form id="minerCacheForm" class="modal-card">
+      <div class="modal-head"><div><p class="section-kicker">SAFE CACHE CLEANUP</p><h2 id="minerCacheTitle">清理旧矿工</h2></div><button id="closeMinerCacheDialogButton" class="icon-button" type="button" aria-label="关闭旧矿工清理窗口">×</button></div>
+      <div class="security-inline"><strong>只清理已确认不再使用的本机矿工文件</strong><span>当前主挖、副挖、运行中的软件及无法确认的目录会保留；不会停矿、修改飞行表或复位超频。扫描列出的文件体积只是估算，实际可用空间以清理结果中的磁盘实测值为准。</span></div>
+      <div id="minerCacheSummary" class="miner-cache-summary" role="status" aria-live="polite"></div>
+      <div id="minerCacheDisk" class="miner-cache-disk"></div>
+      <section class="miner-cache-group"><h3>本次扫描的旧矿工文件</h3><div id="minerCacheCandidates" class="miner-cache-list"></div></section>
+      <section class="miner-cache-group"><h3>当前保留的包</h3><div id="minerCacheProtected" class="miner-cache-list"></div></section>
+      <section class="miner-cache-group"><h3>未归类、未触碰</h3><div id="minerCacheUnclassified" class="miner-cache-list"></div></section>
+      <div id="minerCacheResult" class="miner-cache-result" aria-live="polite"></div>
+      <p id="minerCacheError" class="form-error" role="alert"></p>
+      <div class="modal-actions"><button id="rescanMinerCacheButton" class="btn btn-secondary" type="button">重新扫描</button><button id="confirmMinerCacheCleanupButton" class="btn btn-primary" type="submit">确认清理旧矿工文件</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="miningResidueDialog" class="modal modal-large mining-residue-dialog" aria-labelledby="miningResidueTitle">
+    <form id="miningResidueForm" class="modal-card">
+      <div class="modal-head">
+        <div><p class="section-kicker">MANAGED MINER REPAIR</p><h2 id="miningResidueTitle">修复挖矿状态</h2></div>
+        <button id="closeMiningResidueDialogButton" class="icon-button" type="button" aria-label="关闭修复窗口">×</button>
+      </div>
+      <div class="security-inline warning"><strong>不会仅凭旧 PID 结束进程</strong><span>普通清理仍要求完整身份一致；同名但参数不一致的候选，只有你明确勾选后，Agent 才会依据本次扫描快照再次核验 PID、创建时间、真实路径和受信任矿工目录并清理。清理后还会重新扫描，确认无残留才允许重启挖矿。</span></div>
+      <div id="miningResidueSummary" class="mining-residue-summary" aria-live="polite"></div>
+      <div id="miningResidueFindings" class="mining-residue-findings"></div>
+      <fieldset class="mining-residue-options">
+        <legend>修复后的硬件与挖矿状态</legend>
+        <label class="toggle-field compact"><input id="miningResidueResetSrb" type="checkbox" checked><span><strong>复位 SRBMiner OC</strong><small>只恢复当前硬件默认值；不会删除控制端保存的逐卡参数。</small></span></label>
+        <label class="toggle-field compact"><input id="miningResidueResetNvml" type="checkbox" checked><span><strong>复位 NVML OC</strong><small>恢复驱动默认功耗、频率与风扇策略；控制端保存值仍保留。</small></span></label>
+        <label class="toggle-field compact"><input id="miningResidueRestart" type="checkbox" checked><span><strong>清理后重新启动挖矿</strong><small>仅在清理后复查确认三个运行位都已干净时执行，并重新应用飞行表及保存的 OC。</small></span></label>
+      </fieldset>
+      <label>输入设备名称以确认<input id="miningResidueConfirmName" autocomplete="off" maxlength="80"><small id="miningResidueConfirmHint" class="field-hint"></small></label>
+      <p id="miningResidueError" class="form-error"></p>
+      <div class="modal-actions"><button id="rescanMiningResidueButton" class="btn btn-secondary" type="button">重新扫描</button><button id="cleanupMiningResidueButton" class="btn btn-danger" type="submit">确认修复</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="enrollDialog" class="modal">
+    <form class="modal-card" id="enrollForm">
+      <div class="modal-head"><div><p class="section-kicker">NEW DEVICE</p><h2>接入设备</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <div id="enrollStepForm">
+        <p class="modal-copy">选择接入新设备，或在更换系统盘后安全继承一个已离线设备的名称、历史与控制端设置。</p>
+        <label>接入方式<select id="enrollMode"><option value="new">接入新设备</option><option value="replace">继承已有设备</option></select></label>
+        <div id="enrollNewFields">
+          <label>设备显示名称<input id="enrollLabel" value="new-device" maxlength="80" required><small class="field-hint">设备接入后的初始名称；接入成功后可在设备详情中修改名称并补充备注。</small></label>
+          <label>有效时长<select id="enrollTtl"><option value="15">15 分钟</option><option value="30" selected>30 分钟</option><option value="60">1 小时</option><option value="1440">24 小时</option></select></label>
+        </div>
+        <div id="enrollReplacementFields" class="hidden">
+          <div class="security-inline"><strong>旧受控端必须先离线</strong><span>继承成功后旧密钥立即失效；不要同时启动新旧两个系统。</span></div>
+          <label>要继承的设备<select id="replacementAgent"></select><small class="field-hint">这里只列出当前离线设备；设备 ID、备注和历史会保留。</small></label>
+          <label>输入设备名称确认<input id="replacementConfirmName" maxlength="80" autocomplete="off"><small id="replacementConfirmHint" class="field-hint"></small></label>
+          <label>继承码有效时长<select id="replacementTtl"><option value="15" selected>15 分钟</option><option value="30">30 分钟</option><option value="60">1 小时</option></select></label>
+        </div>
+        <div class="modal-actions"><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="generateTokenButton" class="btn btn-primary" type="submit">生成注册码</button></div>
+      </div>
+      <div id="enrollStepToken" class="hidden">
+        <div class="success-mark">✓</div><h3 id="enrollmentTokenTitle">注册码已生成</h3><p id="enrollmentTokenHelp" class="modal-copy">只显示这一次。把服务器地址和注册码填入 Agent 配置。</p>
+        <div class="secret-box"><code id="enrollmentToken"></code><button id="copyTokenButton" class="text-button" type="button">复制</button></div>
+        <p id="tokenExpiry" class="expiry-text"></p>
+        <pre id="agentCommand" class="command-box"></pre>
+        <div class="modal-actions"><button class="btn btn-primary" type="button" data-close-dialog>完成</button></div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="actionDialog" class="modal">
+    <form class="modal-card" id="actionForm">
+      <div class="modal-head"><div><p class="section-kicker">REMOTE ACTION</p><h2 id="actionTitle">远程操作</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <p id="actionDescription" class="modal-copy"></p>
+      <div id="serviceField" class="hidden"><label>本地服务别名<input id="serviceName" maxlength="128" placeholder="例如 workload"></label><p class="field-hint">必须与该 Agent 本地配置中的服务允许列表一致。</p></div>
+      <div id="confirmField" class="hidden"><label>输入设备名称以确认<input id="confirmName" autocomplete="off"></label></div>
+      <p id="actionError" class="form-error"></p>
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="submitActionButton" class="btn btn-danger" type="submit">确认执行</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="walletDialog" class="modal">
+    <form class="modal-card" id="walletForm">
+      <div class="modal-head"><div><p class="section-kicker">PUBLIC ADDRESS</p><h2 id="walletDialogTitle">添加钱包</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <div class="security-inline"><strong>只填写公开收款地址</strong><span>私钥、助记词、密码和 API 密钥不应进入本系统。</span></div>
+      <div class="inline-grid"><label>名称<input id="walletName" maxlength="80" required placeholder="例如 BTC 主钱包"></label><label>币种<input id="walletCoin" maxlength="24" pattern="[A-Za-z0-9._+\-]+" required placeholder="BTC"><small id="walletCoinHint" class="field-hint hidden"></small></label></div>
+      <label>公开收款地址<input id="walletAddress" minlength="3" maxlength="256" required autocomplete="off" spellcheck="false"></label>
+      <label>备注<textarea id="walletNote" maxlength="500" rows="3" placeholder="可选"></textarea></label>
+      <p id="walletError" class="form-error"></p>
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="createWalletButton" class="btn btn-primary" type="submit">保存钱包</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="poolDialog" class="modal">
+    <form class="modal-card" id="poolForm">
+      <div class="modal-head"><div><p class="section-kicker">SAVED POOL</p><h2 id="poolDialogTitle">添加矿池</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <p class="modal-copy">选择矿池只复制当前地址与密码到飞行表；不会自动更新已保存飞行表或向设备下发命令。</p>
+      <div class="inline-grid"><label>名称<input id="poolName" maxlength="80" required placeholder="例如 PEARL 主矿池"></label><label>币种<input id="poolCoin" maxlength="24" pattern="[A-Za-z0-9._+\-]+" required placeholder="PEARL"></label></div>
+      <label>矿池 URL<input id="poolUrl" maxlength="512" required spellcheck="false" placeholder="stratum+ssl://pool.example.com:443"><small class="field-hint">填写完整协议、主机和端口；支持 stratum+tcp、stratum+ssl、stratum+tls，Pearl Miner 可使用 pearl。</small></label>
+      <label>矿池密码 / Worker 标签<input id="poolPassword" type="password" maxlength="128" autocomplete="off" placeholder="可留空"><small class="field-hint">仅运维人员和管理员可读取并复制到飞行表；查看者只看到是否已设置。</small></label>
+      <label>备注<textarea id="poolNote" maxlength="500" rows="3" placeholder="可选"></textarea></label>
+      <p id="poolError" class="form-error" role="alert"></p>
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="savePoolButton" class="btn btn-primary" type="submit">保存矿池</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="minerPackageDialog" class="modal modal-large">
+    <form class="modal-card" id="minerPackageForm">
+      <div class="modal-head"><div><p class="section-kicker">MINER PACKAGE</p><h2>登记矿工软件包</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <div class="security-inline"><strong>摘要由控制端计算</strong><span>无论上传本地文件还是从 HTTPS 导入，都不需要填写摘要。导入完成后由控制端托管，再下发给 Agent。</span></div>
+      <div class="inline-grid">
+        <label>矿工类别<select id="minerPackageManagedType"><option value="">未归类（普通自定义包）</option><option value="xmrig">XMRig</option><option value="srbminer">SRBMiner-MULTI</option><option value="pearlminer">Pearl Miner</option></select><small class="field-hint">内置矿工使用标准名称和测试版目录。</small></label>
+        <label>软件名称<input id="minerPackageName" maxlength="80" required placeholder="例如 My Custom Miner"><small id="minerPackageNameHint" class="field-hint">普通自定义包可自行填写；不会直接作为命令执行。</small></label>
+      </div>
+      <div id="minerPackageManagedFields" class="inline-grid hidden">
+        <label id="minerPackageManagedOsField">目标平台<select id="minerPackageManagedOsFamily"><option value="windows">Windows x64</option><option value="linux">Linux x64</option></select><small class="field-hint">同一矿工不同平台的测试包可使用相同版号；相同平台和变体重复上传不会覆盖。</small></label>
+        <label id="minerPackageManagedVariantField" class="hidden">Pearl Linux 变体<select id="minerPackageManagedVariant"><option value="nvidia">NVIDIA</option><option value="amd">AMD</option></select><small class="field-hint">Pearl Miner 的 Linux 包必须明确显卡平台。</small></label>
+      </div>
+      <label id="minerPackageDualPlatformField" class="toggle-field hidden"><input id="minerPackageDualPlatform" type="checkbox"><span><strong>一次登记两个平台（同版本号）</strong><small>同一版本号分别上传 Windows ZIP 与 Linux TAR.GZ 两个测试包；版本、矿工类别与备注只填一次，两包作为独立条目入库。</small></span></label>
+      <div class="inline-grid">
+        <label>版本<input id="minerPackageVersion" maxlength="40" pattern="[A-Za-z0-9._+\-]+" required placeholder="例如 1.91"><small class="field-hint">锁定部署版本，便于多台设备使用同一构建并追踪升级。</small></label>
+        <label>发布渠道<input id="minerPackageManagedChannelLabel" value="普通自定义包" readonly><small class="field-hint">内置矿工归类包固定登记为测试版，不会覆盖同名或同版本包。</small></label>
+      </div>
+      <label id="minerPackageArchiveField">压缩包格式<select id="minerPackageArchiveType" required><option value="zip">ZIP（常用于 Windows）</option><option value="tar.gz">TAR.GZ（常用于 Ubuntu）</option></select><small class="field-hint">告诉 Agent 使用哪种安全解压方式；必须与下载文件的实际格式一致。</small></label>
+      <p id="minerPackageLimitHint" class="field-hint" aria-live="polite">尚未获取软件包大小上限。</p>
+      <fieldset class="package-source-picker">
+        <legend>软件包来源</legend>
+        <div class="source-choice-grid">
+          <label class="source-choice"><input type="radio" name="minerPackageSource" value="upload" checked><span><strong>上传本地文件</strong><small>从当前电脑选择 ZIP 或 TAR.GZ，直接保存到控制端。</small></span></label>
+          <label class="source-choice"><input type="radio" name="minerPackageSource" value="import"><span><strong>从 HTTPS 地址导入</strong><small>控制端先检查地址与大小限制，再作为托管文件下发。</small></span></label>
+        </div>
+      </fieldset>
+      <div id="minerPackageUploadFields">
+        <label id="minerPackageSingleFileField">选择软件包文件<input id="minerPackageFile" type="file" accept=".zip,.tar.gz,.tgz,application/zip,application/gzip" required><small class="field-hint">请选择与上方格式一致的压缩包；文件大小还会受控制端上传上限约束。</small></label>
+        <div id="minerPackageDualFileFields" class="inline-grid hidden">
+          <label>Windows 测试包（ZIP）<input id="minerPackageFileWindows" type="file" accept=".zip,application/zip" disabled><small class="field-hint">Windows x64 归类测试包，必须是 .zip 文件；大小受控制端上传上限约束。</small></label>
+          <label id="minerPackageLinuxFileField">Linux 测试包（TAR.GZ）<input id="minerPackageFileLinux" type="file" accept=".tar.gz,.tgz,application/gzip" disabled><small class="field-hint">Linux x64 归类测试包，必须是 .tar.gz 或 .tgz 文件；大小受控制端上传上限约束。</small></label>
+        </div>
+      </div>
+      <div id="minerPackageImportFields" class="hidden">
+        <label>HTTPS 文件地址<input id="minerPackageUrl" type="url" maxlength="1024" placeholder="https://downloads.example.com/miner-1.91.tar.gz" spellcheck="false" disabled><small class="field-hint">必须是指向具体 ZIP 或 TAR.GZ 文件的 HTTPS 地址，不能包含账号、密码或 <code>#</code> 片段。</small></label>
+      </div>
+      <label>备注<textarea id="minerPackageNote" maxlength="500" rows="3" placeholder="例如：官方 Linux CUDA 12 构建，仅用于 NVIDIA"></textarea><small class="field-hint">记录来源、平台、显卡厂商或适用算法，方便运维人员选择，不会传给矿工程序。</small></label>
+      <p id="minerPackageError" class="form-error"></p>
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="createMinerPackageButton" class="btn btn-primary" type="submit">保存软件包</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="agentReleaseDialog" class="modal modal-large">
+    <form class="modal-card" id="agentReleaseForm">
+      <div class="modal-head"><div><p class="section-kicker">AGENT RELEASE</p><h2>上传被控端版本</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <div class="security-inline warning"><strong>上传不会自动下发</strong><span>控制端会严格校验压缩包、更新协议清单和每个文件的 SHA-256。保存后仍需明确选择一台同平台设备。</span></div>
+      <div class="inline-grid agent-release-fixed-fields">
+        <label>目标平台<select id="agentReleasePlatform" required><option value="windows">Windows</option><option value="linux">Linux / Ubuntu</option></select></label>
+        <label>架构<input value="x86_64（x64）" readonly aria-readonly="true"></label>
+      </div>
+      <div class="inline-grid">
+        <label>版本号<input id="agentReleaseVersion" maxlength="40" pattern="(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)" required placeholder="例如 0.6.6"><small id="agentReleaseVersionHint" class="field-hint">必须与包内清单一致并使用 X.Y.Z；同一平台 x64 版本号只能保存一次。</small></label>
+        <label>包格式<input id="agentReleaseArchiveLabel" value="ZIP（Windows 便携版）" readonly aria-readonly="true"><small id="agentReleaseArchiveHint" class="field-hint">包内必须包含 Windows 在线更新所需文件。</small></label>
+      </div>
+      <label>选择更新包<input id="agentReleaseFile" type="file" accept=".zip,application/zip,application/x-zip-compressed" required><small id="agentReleaseFileHint" class="field-hint">文件以二进制流上传；控制端会校验结构、大小和安全路径。</small></label>
+      <label>备注<textarea id="agentReleaseNotes" maxlength="500" rows="3" placeholder="例如：已在 Windows 10 / RTX 5080 灰度机验证"></textarea><small class="field-hint">记录测试范围和已知限制，不会传给正在运行的 Agent。</small></label>
+      <p id="agentReleaseError" class="form-error"></p>
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="uploadAgentReleaseButton" class="btn btn-primary" type="submit">上传并保存</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="agentUpdateDialog" class="modal modal-large">
+    <form class="modal-card" id="agentUpdateForm">
+      <div class="modal-head"><div><p class="section-kicker">SINGLE DEVICE UPDATE</p><h2>指定设备下发被控端</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <div class="security-inline warning"><strong>一次只更新一台设备</strong><span>设备必须在线、与更新包平台一致且为 x64，并主动报告 <code>agent_update.v1</code>。确认后会自动停止该设备正在运行的受管矿工；新版 Agent 稳定回连后自动恢复原飞行表。</span></div>
+      <div id="agentUpdateReleaseSummary" class="agent-update-release-summary"></div>
+      <label>目标设备<select id="agentUpdateAgent" required><option value="">请选择一台设备</option></select><small class="field-hint">选项同时显示名称、设备 ID、当前版本和不可用原因；不支持批量选择。</small></label>
+      <div id="agentUpdateEligibilityDetail" class="agent-update-eligibility" aria-live="polite">请选择目标设备。</div>
+      <label class="toggle-field agent-update-confirm"><input id="agentUpdateConfirm" type="checkbox" required><span><strong>确认停矿并只向上面这一台设备下发</strong><small>我已核对设备 ID 和目标版本；仅该设备会自动停矿、更新并在回连后恢复挖矿，其他设备不受影响。</small></span></label>
+      <p id="agentUpdateError" class="form-error"></p>
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="deployAgentReleaseButton" class="btn btn-primary" type="submit">确认下发到此设备</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="agentBatchUpdateDialog" class="modal modal-large">
+    <form class="modal-card" id="agentBatchUpdateForm">
+      <div class="modal-head"><div><p class="section-kicker">EXPLICIT BATCH UPDATE</p><h2>批量更新被控端</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <div class="security-inline warning"><strong>不会默认选择任何设备</strong><span>先选择发布包，再逐台勾选目标设备。前端兼容性提示仅用于预筛选，控制端会对每台设备重新执行权威校验。</span></div>
+      <label>目标发布包<select id="agentBatchUpdateRelease" required><option value="">请选择发布包</option></select><small class="field-hint">只列出支持 <code>agent_update.v1</code> 的可下发包。</small></label>
+      <div class="batch-selection-head"><strong>明确勾选目标设备</strong><span id="agentBatchUpdateSelectedCount">已选择 0 台</span></div>
+      <div id="agentBatchUpdateAgents" class="batch-choice-list" role="group" aria-label="批量更新目标设备"></div>
+      <div id="agentBatchUpdateEligibilityDetail" class="agent-update-eligibility" aria-live="polite">请先选择发布包。</div>
+      <div id="agentBatchUpdateResults" class="batch-result-list hidden" aria-live="polite"></div>
+      <p id="agentBatchUpdateError" class="form-error"></p>
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="deployAgentReleaseBatchButton" class="btn btn-primary" type="submit">确认批量更新</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="flightBatchApplyDialog" class="modal modal-large">
+    <form class="modal-card" id="flightBatchApplyForm">
+      <div class="modal-head"><div><p class="section-kicker">EXPLICIT BATCH FLIGHT</p><h2>批量应用飞行表</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <div class="security-inline warning"><strong>不会默认选择任何设备</strong><span>选择同一张飞行表后，再逐台明确勾选目标设备。控制端会对每台设备分别执行完整的平台、版本、矿工、双挖与 OC 校验。</span></div>
+      <label>目标飞行表<select id="flightBatchApplySheet" required><option value="">请选择飞行表</option></select><small class="field-hint">使用当前设备页面筛选结果。</small></label>
+      <div class="batch-selection-head"><strong>明确勾选目标设备</strong><span id="flightBatchApplySelectedCount">已选择 0 台</span></div>
+      <div id="flightBatchApplyAgents" class="batch-choice-list" role="group" aria-label="批量应用飞行表目标设备"></div>
+      <div id="flightBatchApplyResults" class="batch-result-list hidden" aria-live="polite"></div>
+      <p id="flightBatchApplyEligibilityHint" class="field-hint" aria-live="polite"></p>
+      <p id="flightBatchApplyError" class="form-error"></p>
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="applyFlightSheetBatchButton" class="btn btn-primary" type="submit">确认批量应用</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="miningControlBatchDialog" class="modal modal-large">
+    <form class="modal-card" id="miningControlBatchForm">
+      <div class="modal-head"><div><p class="section-kicker">EXPLICIT BATCH MINING CONTROL</p><h2 id="miningControlBatchTitle">批量停止挖矿</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <div class="security-inline warning"><strong>不会默认选择任何设备</strong><span id="miningControlBatchWarning">逐台明确勾选目标设备。控制端会对每台设备分别执行与单机操作完全相同的在线、被控端版本与任务冲突校验，被排除的设备会逐台给出原因。</span></div>
+      <div class="batch-selection-head"><strong>明确勾选目标设备</strong><span id="miningControlBatchSelectedCount">已选择 0 台</span></div>
+      <div id="miningControlBatchAgents" class="batch-choice-list" role="group" aria-label="批量挖矿控制目标设备"></div>
+      <div id="miningControlBatchResults" class="batch-result-list hidden" aria-live="polite"></div>
+      <p id="miningControlBatchEligibilityHint" class="field-hint" aria-live="polite"></p>
+      <p id="miningControlBatchError" class="form-error"></p>
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="miningControlBatchSubmitButton" class="btn btn-primary" type="submit">确认批量停止挖矿</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="flightDialog" class="modal modal-flight">
+    <form class="modal-card" id="flightForm" novalidate>
+      <div class="modal-head"><div><p class="section-kicker">MANAGED FLIGHT SHEET</p><h2 id="flightDialogTitle">新建飞行表</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <div class="security-inline"><strong>选择矿工版本或已登记的软件包</strong><span>内置矿工首次下发时缓存所选官方版本。目标 Agent 会检查运行兼容性。</span></div>
+      <div id="flightLegacyNotice" class="security-inline warning hidden" role="status"><strong>历史飞行表只读</strong><span id="flightLegacyNoticeText">原记录不会被静默转换；如需迁移，请明确创建并核对一个新副本。</span></div>
+      <label>飞行表名称<input id="flightName" maxlength="80" required placeholder="例如 XMR - XMRig"><small class="field-hint">运行参数修改会自动同步到正在使用此表挖矿的设备；其他设备待上线并开始挖矿后同步。仅改名称不会触发下发。</small></label>
+      <div class="flight-editor-heading">
+        <div><strong>挖矿任务</strong><small>币种、钱包、矿池与挖矿软件保持 V1 保存方式；软件版本和运行参数可集中设置。</small></div><span id="flightEditorJobCount">1 个挖矿任务</span>
+      </div>
+
+      <fieldset id="flightPrimaryFields" class="flight-section flight-editor-job" data-flight-config-fieldset="flight" aria-labelledby="flightPrimaryJobTitle">
+        <div class="flight-editor-job-header"><span><b class="flight-editor-job-number">1</b><strong id="flightPrimaryJobTitle">主挖配置</strong><small>选择钱包和矿池，挖矿软件参数集中设置</small></span><button class="text-button" type="button" data-flight-configure="flight">设置挖矿软件配置</button><button class="icon-button flight-miner-config-close-top" type="button" data-flight-config-close aria-label="完成主挖软件配置">×</button></div>
+        <div class="inline-grid flight-software-grid flight-job-core-only">
+          <label>矿工软件<select id="flightMinerType" required><option value="xmrig">XMRig（XMR / CPU 推荐）</option><option value="srbminer">SRBMiner-MULTI（CPU / GPU）</option><option value="pearlminer">Pearl Miner（PEARL / GPU）</option></select><small id="flightMinerVersionHint" class="field-hint">从控制端同步官方 GitHub 版本目录。</small></label>
+          <div class="flight-version-field"><div class="flight-version-head"><label for="flightMinerVersion">矿工版本 / 软件包</label></div><select id="flightMinerVersion" required></select><small class="field-hint">内置矿工选择所需版本。</small>
+          </div>
+        </div>
+        <div id="flightMinerVersionCompatibility" class="miner-version-compat flight-job-core-only" aria-live="polite"></div>
+        <label id="flightNativePackageField" class="flight-miner-config-only hidden">矿工包来源<select id="flightNativePackageId" disabled><option value="">自动选择可用包（上传构建组优先）</option></select><small id="flightNativePackageHint" class="field-hint">留空时按目标平台选择该版本已上传且通过 SHA256 校验的构建；缺少平台时不会自动改用官方包。</small></label>
+        <label id="flightExecutionModeField" class="flight-miner-config-only">运行环境<select id="flightExecutionMode" disabled><option value="native">本机原生（推荐）</option><option value="wsl">Windows WSL（Linux NVIDIA 包）</option></select><small id="flightExecutionModeHint" class="field-hint">WSL 只用于 Windows NVIDIA GPU 矿工，需要目标设备已启用可用的 WSL2。</small></label>
+        <label id="flightWorkerField" class="flight-worker-config flight-miner-config-only">Worker 名称模板<input id="flightWorker" maxlength="512" required value="%WORKER_NAME%"><small class="field-hint">主挖和副挖共用；%WORKER_NAME% 使用设备显示名，兼容 %WORK_NAME% 和旧 {hostname}/{agent_name}。{system_hostname}/{agent_id} 保留原意；最终 Worker 最多 128 字符。</small></label>
+        <label class="flight-job-core-only">钱包<select id="flightWallet" required></select><small class="field-hint">币种自动取自钱包，只下发公开收款地址。</small></label>
+        <input id="flightCoin" type="hidden">
+        <label class="flight-job-core-only">选择已保存矿池（可选）<select id="flightSavedPool"><option value="">手工填写矿池地址</option></select><small class="field-hint">选择会复制当时的地址和密码；不建立自动引用，不改变当前钱包。</small></label>
+        <label class="flight-job-core-only flight-pool-address-field"><span id="flightPoolLabelText">Stratum 矿池地址</span><input id="flightPool" maxlength="512" required placeholder="stratum+ssl://pool.example.com:443" spellcheck="false"><small id="flightPoolHint" class="field-hint">必须包含协议和端口；使用 <code>stratum+ssl://</code> 或 <code>stratum+tls://</code> 时自动启用 TLS。</small></label>
+        <details id="flightAdvanced" class="flight-help flight-advanced flight-miner-config-only">
+          <summary>性能与高级设置（通常保持自动）</summary>
+          <div>
+            <div class="inline-grid">
+              <label>算法<select id="flightAlgorithm"><option value="">自动</option><option value="randomx">RandomX</option><option value="pearlhash">PearlHash</option><option value="etchash">Etchash</option><option value="ethash">Ethash</option><option value="kawpow">KawPow</option><option value="autolykos2">Autolykos2</option><option value="fishhash">FishHash</option><option value="qhash">QHash</option><option value="heavyhash">HeavyHash</option><option value="blake3_decred">BLAKE3 Decred</option><option value="karlsenhashv2">KarlsenHashV2</option><option value="walahash">WalaHash</option><option value="xhash">XHash</option></select><small class="field-hint">算法由所选矿工适配器提供；每个矿工只显示其已审计支持的算法。</small></label>
+              <label>GPU 索引（可选）<input id="flightDeviceIndices" maxlength="128" pattern="[0-9]+([,][ ]*[0-9]+)*" placeholder="例如 1,2,4"><small id="flightDeviceIndicesHint" class="field-hint">使用所选矿工报告的 GPU 索引；留空会自动过滤核显并选择当前算法支持的独显。</small></label>
+            </div>
+            <section id="flightCpuRandomxSection" class="miner-specific-panel cpu-randomx-panel hidden" aria-labelledby="flightCpuRandomxHeading">
+              <div class="subsection-head"><div><strong id="flightCpuRandomxHeading">CPU / RandomX</strong><small id="flightCpuRandomxHint">仅在 XMRig 或 SRBMiner RandomX 挖矿时使用</small></div></div>
+              <div id="flightXmrigCpuFields" class="inline-grid miner-specific-fields">
+                <label id="flightCpuHintField">CPU 使用百分比提示（仅 XMRig）<input id="flightCpuHint" type="number" min="1" max="100" value="100"><small class="field-hint">用于自动计算线程布局；填写显式线程数时，以线程数为准。</small></label>
+                <label id="flightCpuThreadsField">CPU 挖矿线程 / 核心数<input id="flightCpuThreads" type="number" min="1" max="1024" step="1" placeholder="自动"><small id="flightCpuThreadsHint" class="field-hint">留空为自动；XMRig 界面上限 256，SRBMiner 上限 1024，通常不要超过逻辑核心数。</small></label>
+              </div>
+              <label id="flightHugePagesField" class="toggle-field compact"><input id="flightHugePages" type="checkbox" checked><span><strong>启用 Huge Pages</strong><small class="field-hint">通常可提升 RandomX 性能；依赖系统权限与大页配置，Windows 首次可能需要管理员权限并重启。</small></span></label>
+            </section>
+            <div id="flightPearlGpuFields" class="inline-grid miner-specific-fields hidden">
+              <label>GPU 后端<select id="flightGpuBackend"><option value="auto">Auto（按设备自动选择）</option><option value="nvidia">NVIDIA</option><option value="amd">AMD</option></select><small class="field-hint">Linux 会按所选后端下载 NVIDIA 或 AMD 官方包；Windows 当前使用 NVIDIA 包。</small></label>
+              <label id="flightCudaVariantField">CUDA 构建<select id="flightCudaVariant"><option value="auto">Auto（按驱动自动选择）</option><option value="cuda12">CUDA 12</option><option value="cuda13">CUDA 13</option></select><small class="field-hint">仅 NVIDIA；Auto 会根据设备驱动和包内可用程序选择。</small></label>
+            </div>
+            <label id="flightExtraArgsField">额外命令行参数<textarea id="flightExtraArgs" maxlength="4096" rows="3" spellcheck="false" placeholder='例如 --future-option "value with spaces"'></textarea><small class="field-hint">填写所选矿工支持的额外参数；包含空格的值使用引号。主挖和第二矿工分别保存，留空可清除。</small><small class="field-hint">非空额外参数需要目标设备运行 Agent 0.8.31 或更新版本，并已上报能力 <code>managed_mining.extra_args.v1</code>。SRBMiner 内置双挖共用一个进程，按主挖、第二矿工的配置顺序各追加一次额外参数。</small></label>
+            <div id="flightAdapterOptions" class="inline-grid miner-specific-fields hidden" aria-live="polite"></div>
+            <label id="flightPoolPasswordField">矿池密码<input id="flightPoolPassword" maxlength="128" value="x" autocomplete="off"><small class="field-hint">多数矿池使用 x；它不是控制端或系统密码。</small></label>
+            <section id="flightGpuOcSection" class="miner-specific-panel hidden" aria-labelledby="flightGpuOcHeading">
+              <div class="subsection-head">
+                <div><strong id="flightGpuOcHeading">SRBMiner 按型号 GPU OC</strong><small>可选；内置双挖共用，独立第二矿工不继承</small></div>
+                <button id="addFlightGpuOcRowButton" class="btn btn-secondary" type="button">＋ 添加型号</button>
+              </div>
+              <p class="field-hint">一行对应一个型号规则；同型号多张卡共用该行参数。没有匹配规则只表示本表不提供该卡参数，仍可能使用设备已保存 OC。各行须填写相同控制列；Offset、Lock 与 Power Limit 可同时调用。</p>
+              <div id="flightGpuOcRows" class="gpu-settings"></div>
+            </section>
+          </div>
+        </details>
+        <div class="modal-actions flight-miner-config-actions flight-miner-config-only"><button class="btn btn-secondary" type="button" data-flight-config-reset>恢复默认参数</button><button class="btn btn-primary" type="button" data-flight-config-close>完成设置</button></div>
+      </fieldset>
+
+      <label class="toggle-field flight-editor-add-row"><input id="flightSecondaryEnabled" type="checkbox"><span><strong>启用第二矿工 / 双挖</strong><small id="flightSecondaryHint" class="field-hint">可保留 SRBMiner 单进程内置双挖，也可启动第二个独立的托管矿工进程。</small></span></label>
+      <fieldset id="flightSecondaryFields" class="flight-section flight-editor-job secondary-section hidden" data-flight-config-fieldset="flightSecondary" disabled aria-labelledby="flightSecondaryJobTitle">
+        <div class="flight-editor-job-header"><span><b class="flight-editor-job-number">2</b><strong id="flightSecondaryJobTitle">第二矿工</strong><small>模式、钱包和矿池独立保存，软件参数集中设置</small></span><button class="text-button" type="button" data-flight-configure="flightSecondary">设置挖矿软件配置</button><button class="icon-button flight-miner-config-close-top" type="button" data-flight-config-close aria-label="完成第二矿工软件配置">×</button></div>
+        <label class="flight-job-core-only flight-secondary-mode-field">第二矿工模式<select id="flightSecondaryMode" required><option value="independent">第二独立矿工（推荐）</option><option value="integrated">SRBMiner 内置双挖（同一进程）</option></select><small id="flightSecondaryModeHint" class="field-hint">独立模式会启动第二个矿工进程；适合 XMRig CPU + Pearl Miner GPU 等组合。</small></label>
+        <div class="inline-grid flight-software-grid flight-job-core-only">
+          <label>矿工软件<select id="flightSecondaryMinerType" required><option value="xmrig">XMRig（XMR / CPU 推荐）</option><option value="srbminer">SRBMiner-MULTI（CPU / GPU）</option><option value="pearlminer">Pearl Miner（PEARL / GPU）</option></select><small class="field-hint">内置双挖的软件与主挖保持一致；独立模式的组合范围以当前矿工支持能力为准。</small></label>
+          <label>矿工版本<select id="flightSecondaryMinerVersion" required></select><small id="flightSecondaryMinerVersionHint" class="field-hint">独立模式使用自己的版本；内置双挖自动跟随主挖版本。</small></label>
+        </div>
+        <div id="flightSecondaryMinerVersionCompatibility" class="miner-version-compat flight-job-core-only" aria-live="polite"></div>
+        <label id="flightSecondaryNativePackageField" class="flight-miner-config-only hidden">矿工包来源<select id="flightSecondaryNativePackageId" disabled><option value="">自动选择可用包（上传构建组优先）</option></select><small id="flightSecondaryNativePackageHint" class="field-hint">留空时按目标平台选择该版本已上传且通过 SHA256 校验的构建；缺少平台时不会自动改用官方包。</small></label>
+        <label id="flightSecondaryExecutionModeField" class="flight-miner-config-only">运行环境<select id="flightSecondaryExecutionMode" disabled><option value="native">本机原生（推荐）</option><option value="wsl">Windows WSL（Linux NVIDIA 包）</option></select><small id="flightSecondaryExecutionModeHint" class="field-hint">WSL 只用于 Windows NVIDIA GPU 矿工，需要目标设备已启用可用的 WSL2。</small></label>
+        <label class="flight-job-core-only">钱包<select id="flightSecondaryWallet" required></select></label>
+        <input id="flightSecondaryCoin" type="hidden">
+        <label class="flight-job-core-only">第二矿工已保存矿池（可选）<select id="flightSecondarySavedPool"><option value="">手工填写第二矿池地址</option></select><small class="field-hint">只复制到第二矿工，主挖矿池保持不变。</small></label>
+        <label class="flight-job-core-only flight-pool-address-field"><span id="flightSecondaryPoolLabelText">Stratum 矿池地址</span><input id="flightSecondaryPool" maxlength="512" required placeholder="stratum+ssl://secondary-pool.example.com:443" spellcheck="false"><small id="flightSecondaryPoolHint" class="field-hint">必须包含协议和端口。</small></label>
+        <details id="flightSecondaryAdvanced" class="flight-help flight-advanced flight-miner-config-only">
+          <summary>第二矿工高级设置</summary>
+          <div>
+            <div class="inline-grid"><label>算法<select id="flightSecondaryAlgorithm"><option value="">自动</option><option value="randomx">RandomX</option><option value="pearlhash">PearlHash</option><option value="etchash">Etchash</option><option value="ethash">Ethash</option><option value="kawpow">KawPow</option><option value="autolykos2">Autolykos2</option><option value="fishhash">FishHash</option><option value="qhash">QHash</option><option value="heavyhash">HeavyHash</option><option value="blake3_decred">BLAKE3 Decred</option><option value="karlsenhashv2">KarlsenHashV2</option><option value="walahash">WalaHash</option><option value="xhash">XHash</option></select></label><label>GPU 索引（可选）<input id="flightSecondaryDeviceIndices" maxlength="128" pattern="[0-9]+([,][ ]*[0-9]+)*" placeholder="例如 1,2,4"><small id="flightSecondaryDeviceIndicesHint" class="field-hint">留空会自动选择支持的独显；内置双挖须与主挖索引一致，两个独立 GPU 矿工须明确填写且互不重叠。</small></label></div>
+            <section id="flightSecondaryCpuRandomxSection" class="miner-specific-panel cpu-randomx-panel hidden" aria-labelledby="flightSecondaryCpuRandomxHeading">
+              <div class="subsection-head"><div><strong id="flightSecondaryCpuRandomxHeading">CPU / RandomX</strong><small id="flightSecondaryCpuRandomxHint">第二矿工使用 XMRig 或 SRBMiner RandomX 时生效</small></div></div>
+              <div id="flightSecondaryCpuFields" class="inline-grid miner-specific-fields">
+                <label id="flightSecondaryCpuHintField">CPU 使用百分比提示（仅 XMRig）<input id="flightSecondaryCpuHint" type="number" min="1" max="100" value="100"><small class="field-hint">填写显式线程数时，以线程数为准。</small></label>
+                <label id="flightSecondaryCpuThreadsField">CPU 挖矿线程 / 核心数<input id="flightSecondaryCpuThreads" type="number" min="1" max="1024" step="1" placeholder="自动"><small id="flightSecondaryCpuThreadsHint" class="field-hint">留空为自动；XMRig 界面上限 256，SRBMiner 上限 1024。</small></label>
+              </div>
+              <label id="flightSecondaryHugePagesField" class="toggle-field compact"><input id="flightSecondaryHugePages" type="checkbox" checked><span><strong>启用 Huge Pages</strong><small class="field-hint">依赖系统权限与大页配置；与 1GB Pages 可分别设置。</small></span></label>
+            </section>
+            <div id="flightSecondaryPearlGpuFields" class="inline-grid miner-specific-fields hidden">
+              <label>GPU 后端<select id="flightSecondaryGpuBackend"><option value="auto">Auto（按设备自动选择）</option><option value="nvidia">NVIDIA</option><option value="amd">AMD</option></select><small class="field-hint">Linux 按所选后端下载对应官方包。</small></label>
+              <label id="flightSecondaryCudaVariantField">CUDA 构建<select id="flightSecondaryCudaVariant"><option value="auto">Auto（按驱动自动选择）</option><option value="cuda12">CUDA 12</option><option value="cuda13">CUDA 13</option></select><small class="field-hint">仅 NVIDIA；Auto 会按设备驱动选择。</small></label>
+            </div>
+            <label id="flightSecondaryExtraArgsField">额外命令行参数<textarea id="flightSecondaryExtraArgs" maxlength="4096" rows="3" spellcheck="false" placeholder='例如 --future-option "value with spaces"'></textarea><small class="field-hint">填写所选矿工支持的额外参数；包含空格的值使用引号。主挖和第二矿工分别保存，留空可清除。</small><small class="field-hint">非空额外参数需要目标设备运行 Agent 0.8.31 或更新版本，并已上报能力 <code>managed_mining.extra_args.v1</code>。SRBMiner 内置双挖共用一个进程，按主挖、第二矿工的配置顺序各追加一次额外参数。</small></label>
+            <div id="flightSecondaryAdapterOptions" class="inline-grid miner-specific-fields hidden" aria-live="polite"></div>
+            <label id="flightSecondaryPoolPasswordField">矿池密码<input id="flightSecondaryPoolPassword" maxlength="128" value="x" autocomplete="off"></label>
+          </div>
+        </details>
+        <div class="modal-actions flight-miner-config-actions flight-miner-config-only"><button class="btn btn-secondary" type="button" data-flight-config-reset>恢复默认参数</button><button class="btn btn-primary" type="button" data-flight-config-close>完成设置</button></div>
+      </fieldset>
+
+      <p id="flightError" class="form-error"></p>
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="migrateFlightButton" class="btn btn-secondary hidden" type="button">迁移为副本</button><button id="createFlightButton" class="btn btn-primary" type="submit">保存飞行表</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="deviceGpuOcDialog" class="modal modal-large">
+    <form class="modal-card" id="deviceGpuOcForm">
+      <div class="modal-head"><div><p class="section-kicker">NVIDIA NVML</p><h2 id="deviceGpuOcTitle">单卡 OC 设置</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <div class="security-inline warning"><strong>只在单卡上使用你了解的保守参数</strong><span>提交后只调节当前设备的这张卡；Agent 本地开关、硬限制、管理员权限和 NVML 驱动范围仍有最终决定权。</span></div>
+      <div class="device-gpu-oc-target"><span>目标 GPU Index</span><strong id="deviceGpuOcTarget">—</strong><input id="deviceGpuOcIndex" type="hidden"></div>
+      <div class="device-gpu-oc-grid">
+        <label data-device-gpu-control="power_limit_w">Power Limit (W)<input type="number" min="0" step="any" data-device-gpu-field="power_limit_w" placeholder="Optional"><small>NVML power limit</small></label>
+        <label data-device-gpu-control="core_clock_offset_mhz">Core Offset (MHz)<input type="number" min="-2000" max="2000" step="1" data-device-gpu-field="core_clock_offset_mhz" placeholder="Optional"><small>NVML GPC clock offset</small></label>
+        <label data-device-gpu-control="core_clock_lock_mhz">Lock Core Clock (MHz)<input type="number" min="100" max="5000" step="1" data-device-gpu-field="core_clock_lock_mhz" placeholder="Optional"><small>NVML 选择最接近的硬件频率；温度、功耗保护或时钟档位可能造成小幅偏差</small></label>
+        <label data-device-gpu-control="memory_clock_offset_mhz">Memory Offset (MHz)<input type="number" min="-5000" max="5000" step="1" data-device-gpu-field="memory_clock_offset_mhz" placeholder="Optional"><small>NVML memory clock offset</small></label>
+        <label data-device-gpu-control="memory_clock_lock_mhz">Lock Memory Clock (MHz)<input type="number" min="100" max="20000" step="1" data-device-gpu-field="memory_clock_lock_mhz" placeholder="Optional"><small>NVML locked memory clocks</small></label>
+        <label data-device-gpu-control="fan_percent">Fan (%)<input type="number" min="30" max="100" step="1" data-device-gpu-field="fan_percent" placeholder="Optional"><small>NVML 手动风扇；停止挖矿或删除已保存 OC 后恢复驱动默认策略</small></label>
+      </div>
+      <p id="deviceGpuOcCapabilityHint" class="field-hint"></p>
+      <p class="field-hint">至少填写一项。Offset、Lock、Power Limit 与 Fan 会作为结构化字段下发，不执行网页提供的命令行。</p>
+      <p id="deviceGpuOcError" class="form-error"></p>
+      <div class="modal-actions"><button id="deleteDeviceGpuOcButton" class="btn btn-secondary danger-text hidden" type="button">删除已保存参数</button><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="applyDeviceGpuOcButton" class="btn btn-primary" type="submit">保存并下发</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="deviceGpuOcBatchDialog" class="modal modal-large">
+    <form class="modal-card" id="deviceGpuOcBatchForm">
+      <div class="modal-head"><div><p class="section-kicker">NVIDIA NVML</p><h2>批量 OC 设置</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <div class="security-inline warning"><strong>只改变你明确勾选的显卡</strong><span>默认不选择任何显卡；未选显卡的已保存参数和当前硬件状态都不会改变。可用字段取所选显卡能力的交集。</span></div>
+      <div class="batch-selection-head"><strong>选择 NVIDIA 显卡</strong><span id="deviceGpuOcBatchSelectedCount">已选择 0 张</span></div>
+      <div id="deviceGpuOcBatchTargets" class="batch-choice-list gpu-batch-choice-list" role="group" aria-label="批量 OC 目标显卡"></div>
+      <div class="device-gpu-oc-grid">
+        <div data-device-gpu-batch-control="power_limit_w" class="gpu-batch-parameter"><label>Power Limit (W)<input type="number" min="0" step="any" data-device-gpu-batch-field="power_limit_w" placeholder="Optional"><small>所选显卡共同支持的 NVML power limit</small></label><label class="gpu-batch-reset-option"><input type="checkbox" data-device-gpu-batch-reset="power_limit_w">恢复此项默认</label></div>
+        <div data-device-gpu-batch-control="core_clock_offset_mhz" class="gpu-batch-parameter"><label>Core Offset (MHz)<input type="number" min="-2000" max="2000" step="1" data-device-gpu-batch-field="core_clock_offset_mhz" placeholder="Optional"><small>所选显卡共同支持的 NVML GPC clock offset</small></label><label class="gpu-batch-reset-option"><input type="checkbox" data-device-gpu-batch-reset="core_clock_offset_mhz">恢复此项默认</label></div>
+        <div data-device-gpu-batch-control="core_clock_lock_mhz" class="gpu-batch-parameter"><label>Lock Core Clock (MHz)<input type="number" min="100" max="5000" step="1" data-device-gpu-batch-field="core_clock_lock_mhz" placeholder="Optional"><small>所选显卡会采用最接近的硬件频率；保护降频仍优先</small></label><label class="gpu-batch-reset-option"><input type="checkbox" data-device-gpu-batch-reset="core_clock_lock_mhz">恢复此项默认</label></div>
+        <div data-device-gpu-batch-control="memory_clock_offset_mhz" class="gpu-batch-parameter"><label>Memory Offset (MHz)<input type="number" min="-5000" max="5000" step="1" data-device-gpu-batch-field="memory_clock_offset_mhz" placeholder="Optional"><small>所选显卡共同支持的 NVML memory clock offset</small></label><label class="gpu-batch-reset-option"><input type="checkbox" data-device-gpu-batch-reset="memory_clock_offset_mhz">恢复此项默认</label></div>
+        <div data-device-gpu-batch-control="memory_clock_lock_mhz" class="gpu-batch-parameter"><label>Lock Memory Clock (MHz)<input type="number" min="100" max="20000" step="1" data-device-gpu-batch-field="memory_clock_lock_mhz" placeholder="Optional"><small>所选显卡共同支持的 NVML locked memory clocks</small></label><label class="gpu-batch-reset-option"><input type="checkbox" data-device-gpu-batch-reset="memory_clock_lock_mhz">恢复此项默认</label></div>
+        <div data-device-gpu-batch-control="fan_percent" class="gpu-batch-parameter"><label>Fan (%)<input type="number" min="30" max="100" step="1" data-device-gpu-batch-field="fan_percent" placeholder="Optional"><small>所选显卡共同支持的 NVML 手动风扇范围</small></label><label class="gpu-batch-reset-option"><input type="checkbox" data-device-gpu-batch-reset="fan_percent">恢复此项默认</label></div>
+      </div>
+      <p id="deviceGpuOcBatchCapabilityHint" class="field-hint">请先明确勾选至少一张显卡。</p>
+      <div id="deviceGpuOcBatchResults" class="batch-result-list hidden" aria-live="polite"></div>
+      <p id="deviceGpuOcBatchError" class="form-error"></p>
+      <div class="modal-actions"><button id="clearDeviceGpuOcBatchButton" class="btn btn-secondary danger-text" type="button">清除选中卡 OC</button><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="applyDeviceGpuOcBatchButton" class="btn btn-primary" type="submit">保存并下发到选中卡</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="deployDialog" class="modal">
+    <form class="modal-card" id="deployForm">
+      <div class="modal-head"><div><p class="section-kicker">APPLY TO DEVICE</p><h2 id="deployTitle">下发配置</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <p id="deployDescription" class="modal-copy"></p>
+      <label id="deploySelectLabel">选择配置<select id="deploySelect" required></select></label>
+      <div id="deployWarning" class="security-inline warning hidden"><strong>下发前检查</strong><span id="deployWarningText">请选择飞行表和目标设备。</span></div>
+      <p id="deployError" class="form-error"></p>
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="submitDeployButton" class="btn btn-primary" type="submit">确认下发</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="userDialog" class="modal">
+    <form class="modal-card" id="userForm">
+      <div class="modal-head"><div><p class="section-kicker">ACCESS</p><h2>添加控制台用户</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭对话框">×</button></div>
+      <label>用户名<input id="newUsername" pattern="[a-zA-Z0-9_.-]+" minlength="3" required></label>
+      <label>初始密码<input id="newPassword" type="password" minlength="12" required></label>
+      <label>角色<select id="newRole"><option value="viewer">查看者</option><option value="operator">运维人员</option><option value="admin">管理员</option></select></label>
+      <p id="userError" class="form-error"></p>
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="createUserButton" class="btn btn-primary" type="submit">创建用户</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="passwordChangeDialog" class="modal" aria-labelledby="passwordChangeTitle">
+    <form class="modal-card" id="passwordChangeForm" novalidate>
+      <div class="modal-head"><div><p class="section-kicker">MY ACCOUNT</p><h2 id="passwordChangeTitle">修改我的密码</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭修改密码">×</button></div>
+      <p id="passwordChangeHint" class="modal-copy">新密码须为 12–256 字符。修改成功后需要使用新密码重新登录。</p>
+      <label>当前密码<input id="passwordChangeCurrent" name="current_password" type="password" autocomplete="section-rigpilot-password-change current-password" aria-describedby="passwordChangeHint" required></label>
+      <label>新密码<input id="passwordChangeNew" name="new_password" type="password" autocomplete="section-rigpilot-password-change new-password" aria-describedby="passwordChangeHint" required></label>
+      <label>确认新密码<input id="passwordChangeConfirm" name="confirm_password" type="password" autocomplete="section-rigpilot-password-change new-password" required></label>
+      <p id="passwordChangeError" class="form-error" role="alert"></p>
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" data-close-dialog>取消</button><button id="submitPasswordChangeButton" class="btn btn-primary" type="submit">修改密码</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="setupDialog" class="modal" aria-labelledby="setupTitle">
+    <section class="modal-card">
+      <div class="modal-head"><div><p class="section-kicker">欢迎使用 RigPilot</p><h2 id="setupTitle">首次安装向导</h2></div><button class="icon-button" type="button" data-setup-later aria-label="稍后继续安装向导">×</button></div>
+      <p class="modal-copy">按下面三步准备控制端。进度会保存，可以稍后继续或从系统设置重新打开。</p>
+      <nav class="setup-progress" aria-label="安装步骤">
+        <button type="button" data-setup-step="password"><span>1</span><strong>账户密码<small id="setupPasswordProgress">未修改</small></strong></button>
+        <button type="button" data-setup-step="device"><span>2</span><strong>设备接入</strong></button>
+        <button type="button" data-setup-step="configuration"><span>3</span><strong>常用配置</strong></button>
+      </nav>
+      <div data-setup-panel="password">
+        <h3>修改当前管理员密码</h3>
+        <p id="setupPasswordState" class="modal-copy">建议先更改管理员密码，使用自己保管的密码登录控制端。</p>
+        <p class="modal-copy">修改后需重新登录，向导会从设备接入继续。</p>
+        <button id="setupPasswordButton" class="btn btn-primary" type="button">修改我的密码</button>
+      </div>
+      <div data-setup-panel="device" class="hidden">
+        <h3>确认控制端地址并接入设备</h3>
+        <p class="modal-copy">当前浏览器使用的控制端地址：</p>
+        <code id="setupControllerAddress" class="setup-controller-address"></code>
+        <p class="modal-copy">请在矿机上确认能够访问这个地址，并在 Agent 中填写同一地址。远端矿机不能使用本机的 localhost 或 127.0.0.1。地址不在向导中修改。</p>
+        <button id="setupEnrollmentButton" class="btn btn-primary" type="button">打开设备接入</button>
+        <p class="field-hint">在接入窗口核对名称和有效时长后，再手动生成注册码。</p>
+      </div>
+      <div data-setup-panel="configuration" class="hidden">
+        <h3>准备常用挖矿配置</h3>
+        <p class="modal-copy">按需打开下面的页面添加配置；完成后再从飞行表选择设备应用。</p>
+        <div class="setup-entry-list">
+          <button class="btn btn-secondary" type="button" data-setup-page="wallets">钱包 · 保存公开收款地址</button>
+          <button class="btn btn-secondary" type="button" data-setup-page="pools">矿池 · 保存地址与连接参数</button>
+          <button class="btn btn-secondary" type="button" data-setup-page="flights">飞行表 · 选择矿工与挖矿配置</button>
+        </div>
+      </div>
+      <p id="setupError" class="form-error" role="alert"></p>
+      <div class="modal-actions"><button id="setupPreviousButton" class="btn btn-secondary" type="button" disabled>上一步</button><button class="btn btn-secondary" type="button" data-setup-later>稍后继续</button><button id="setupNextButton" class="btn btn-secondary" type="button">暂时跳过</button></div>
+    </section>
+  </dialog>
+
+  <div id="toastRegion" class="toast-region" aria-live="polite"></div>
+  <script id="minerAdapterBootstrap" type="application/json">[{"abi_version":"miner-adapter.v1","adapter_id":"org.xmrig.xmrig","adapter_revision":1,"miner_type":"xmrig","display_name":"XMRig","runtime_id":"builtin.xmrig.v1","telemetry_id":"builtin.xmrig.http.v1","release":{"provider":"github","owner":"xmrig","repository":"xmrig","fallback_versions":["6.26.0","6.25.0","6.23.0"],"resolver_id":"github.xmrig.v1","tag_style":"v_prefix","prerelease_policy":"stable_only","version_style":"three_part_numeric"},"platforms":[{"os_family":"windows","executable_candidates":["xmrig.exe"],"asset_variants":[]},{"os_family":"linux","executable_candidates":["xmrig"],"asset_variants":[]}],"assets":[{"key":"windows","os_family":"windows","archive_type":"zip","variant":null},{"key":"linux","os_family":"linux","archive_type":"tar.gz","variant":null}],"algorithms":[{"name":"randomx","resource_kind":"cpu","coins":["XMR"],"aliases":["rx","rx/0"],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"}],"default_algorithm":"randomx","coin_defaults":{"XMR":"randomx"},"resource_kinds":["cpu"],"pool_schemes":["stratum+ssl","stratum+tcp","stratum+tls"],"options":[{"name":"cpu_threads","type":"integer","label":"CPU Threads","description":"CPU mining threads","default":null,"nullable":true,"scope":"job","minimum":1,"maximum":1024},{"name":"huge_pages","type":"boolean","label":"Huge Pages","description":"Enable miner huge pages","default":true,"nullable":false,"scope":"job"},{"name":"randomx_1gb_pages","type":"boolean","label":"RandomX 1 GB Pages","description":"Enable RandomX one-gigabyte pages when supported","default":false,"nullable":false,"scope":"job"},{"name":"tls","type":"boolean","label":"TLS","description":"Enable the miner TLS option","default":false,"nullable":false,"scope":"job"},{"name":"keepalive","type":"boolean","label":"Keepalive","description":"Enable pool keepalive","default":true,"nullable":false,"scope":"job"},{"name":"extra_args","type":"string","label":"额外参数","description":"附加矿工命令行参数；支持双/单引号和多行，按字面值传入；不可覆盖钱包、矿池、API、设备、OC 或配置路径","default":"","nullable":false,"scope":"job","min_length":0,"max_length":4096,"multiline":true},{"name":"cpu_max_threads_hint","type":"integer","label":"Maximum CPU Threads","description":"Limit automatic CPU thread selection by percentage","default":100,"nullable":false,"scope":"job","minimum":1,"maximum":100},{"name":"pause_on_battery","type":"boolean","label":"Pause on Battery","description":"Pause CPU mining while a portable device uses battery power","default":false,"nullable":false,"scope":"job"}],"capabilities":["cpu","independent_instances","local_http_api","native"],"package_namespaces":["builtin-xmrig-","test-xmrig-"],"dual_algorithm_pairs":[],"dual_any_secondary":[],"catalogue":null,"periodic_cpu_threads_rule":{},"protocol_requirements":{}},{"abi_version":"miner-adapter.v1","adapter_id":"org.doktor83.srbminer-multi","adapter_revision":1,"miner_type":"srbminer","display_name":"SRBMiner-MULTI","runtime_id":"builtin.srbminer.v1","telemetry_id":"builtin.srbminer.http.v1","release":{"provider":"github","owner":"doktor83","repository":"SRBMiner-Multi","fallback_versions":["3.7.2","3.7.1","3.4.6","3.4.5","3.4.4"],"resolver_id":"github.srbminer.v1","tag_style":"plain","prerelease_policy":"stable_only","version_style":"three_part_numeric"},"platforms":[{"os_family":"windows","executable_candidates":["SRBMiner-MULTI.exe"],"asset_variants":[]},{"os_family":"linux","executable_candidates":["SRBMiner-MULTI"],"asset_variants":[]}],"assets":[{"key":"windows","os_family":"windows","archive_type":"zip","variant":null},{"key":"linux","os_family":"linux","archive_type":"tar.gz","variant":null}],"algorithms":[{"name":"argon2d_16000","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu","gpu"],"gpu_vendors":["amd"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"argon2d_dynamic","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu","gpu"],"gpu_vendors":["amd"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"argon2id_exfer","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu","gpu"],"gpu_vendors":["amd","nvidia"],"gpu_minimum_versions":{},"minimum_version":"3.2.9","removed_version":null,"catalogue_status":"current"},{"name":"autolykos2","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"blake3_an","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":"3.5.7","removed_version":null,"catalogue_status":"current"},{"name":"blake3_decred","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"cpupower","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"cryptonight_gpu","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu","gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"cryptonight_turtle","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu","gpu"],"gpu_vendors":["amd","nvidia"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"curvehash","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu","gpu"],"gpu_vendors":["amd"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"etchash","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"ethash","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"evrprogpow","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"firopow","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"fishhash","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"flex","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"ghostrider","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"heavyhash","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"kawpow","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"lyra2v2_webchain","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu","gpu"],"gpu_vendors":["amd","nvidia"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"meowpow","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"mike","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"minotaurx","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"noid","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia"],"gpu_minimum_versions":{},"minimum_version":"3.6.3","removed_version":null,"catalogue_status":"current"},{"name":"oggpow","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":"3.3.6","removed_version":null,"catalogue_status":"current"},{"name":"panthera","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"pearlhash","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"phihash","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"progpow_epic","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"progpow_zano","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"qhash","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":"3.1.6","removed_version":null,"catalogue_status":"current"},{"name":"quantus","resource_kind":"gpu","coins":["QUANTUS"],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{"amd":"3.6.4","nvidia":"3.6.4","intel":"3.7.0"},"minimum_version":"3.6.4","removed_version":null,"catalogue_status":"current"},{"name":"randomalpha","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"randomarq","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"randomc64","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":"3.1.5","removed_version":null,"catalogue_status":"current"},{"name":"randomdrgx","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":"3.5.7","removed_version":null,"catalogue_status":"current"},{"name":"randomepic","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"randomjuno","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":"3.0.8","removed_version":null,"catalogue_status":"current"},{"name":"randompcn","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":"3.5.6","removed_version":null,"catalogue_status":"current"},{"name":"randomscash","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"randomsnap","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":"3.1.2","removed_version":null,"catalogue_status":"current"},{"name":"randomvirel","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"randomx","resource_kind":"cpu","coins":["XMR"],"aliases":["rx","rx/0"],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"randomy","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"randomyada","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"randomzqvx","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":"3.5.6","removed_version":null,"catalogue_status":"current"},{"name":"rinhash","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"sha256d_csd","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":"3.5.8","removed_version":null,"catalogue_status":"current"},{"name":"sha3t","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":"3.5.5","removed_version":null,"catalogue_status":"current"},{"name":"verthash","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"verushash","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"xelishashv3","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu","gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{"amd":"3.1.4","nvidia":"3.1.2","intel":"3.1.4"},"minimum_version":"3.0.6","removed_version":null,"catalogue_status":"current"},{"name":"xhash","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":["amd","nvidia","intel"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yescrypt","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu","gpu"],"gpu_vendors":["amd","nvidia"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yescryptr16","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu","gpu"],"gpu_vendors":["amd","nvidia"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yescryptr32","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu","gpu"],"gpu_vendors":["amd","nvidia"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yescryptr8","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu","gpu"],"gpu_vendors":["amd","nvidia"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yespower","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu","gpu"],"gpu_vendors":["nvidia"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yespower2b","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yespoweradvc","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yespowereqpay","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yespowerinterchained","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yespowerltncg","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yespowermgpc","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yespowermwc","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":"3.1.1","removed_version":null,"catalogue_status":"current"},{"name":"yespowerr16","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yespowersugar","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yespowertide","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu","gpu"],"gpu_vendors":["nvidia"],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"yespowerurx","resource_kind":"cpu","coins":[],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"},{"name":"walahash","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":"3.5.8","catalogue_status":"legacy"},{"name":"karlsenhashv2","resource_kind":"gpu","coins":[],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":"3.5.8","catalogue_status":"legacy"}],"default_algorithm":"randomx","coin_defaults":{"XMR":"randomx","ETC":"etchash","ETHW":"ethash","RVN":"kawpow","ERG":"autolykos2","PEARL":"pearlhash","QUANTUS":"quantus","QTC":"qhash"},"resource_kinds":["cpu","gpu"],"pool_schemes":["quic","stratum+ssl","stratum+tcp","stratum+tls"],"options":[{"name":"cpu_threads","type":"integer","label":"CPU Threads","description":"CPU mining threads","default":null,"nullable":true,"scope":"job","minimum":1,"maximum":1024},{"name":"huge_pages","type":"boolean","label":"Huge Pages","description":"Enable miner huge pages","default":true,"nullable":false,"scope":"job"},{"name":"randomx_1gb_pages","type":"boolean","label":"RandomX 1 GB Pages","description":"Enable RandomX one-gigabyte pages when supported","default":false,"nullable":false,"scope":"job"},{"name":"tls","type":"boolean","label":"TLS","description":"Enable the miner TLS option","default":false,"nullable":false,"scope":"job"},{"name":"keepalive","type":"boolean","label":"Keepalive","description":"Enable pool keepalive","default":true,"nullable":false,"scope":"job"},{"name":"extra_args","type":"string","label":"额外参数","description":"附加矿工命令行参数；支持双/单引号和多行，按字面值传入；不可覆盖钱包、矿池、API、设备、OC 或配置路径","default":"","nullable":false,"scope":"job","min_length":0,"max_length":4096,"multiline":true},{"name":"resource_kind","type":"choice","label":"任务资源","description":"CPU/GPU 混合算法选择本任务实际使用的资源；留空使用算法默认资源","default":null,"nullable":true,"scope":"job","choices":["cpu","gpu"]},{"name":"quic_wallet_mode","type":"choice","label":"QUIC 连接身份","description":"公共矿池使用付款钱包（默认）；私有节点明确选择 token，并在私密矿池凭据中输入节点认证 token","default":null,"nullable":true,"scope":"job","choices":["wallet","token"]},{"name":"tls_cert_sha256","type":"string","label":"QUIC 证书指纹","description":"Quantus QUIC 的 DER certificate SHA256 pin；保持节点提供的编码，不作为付款钱包","default":null,"nullable":true,"scope":"job","min_length":1,"max_length":512},{"name":"cpu_threads_reduce","type":"integer","label":"Reduce CPU Threads","description":"Reduce SRBMiner automatic CPU threads","default":null,"nullable":true,"scope":"job","minimum":0,"maximum":1024},{"name":"cpu_threads_intensity","type":"choice","label":"CPU Thread Intensity","description":"SRBMiner CPU thread intensity","default":null,"nullable":true,"scope":"job","choices":[1,2,4]},{"name":"extended_log","type":"boolean","label":"Extended Log","description":"Enable extended SRBMiner logging","default":false,"nullable":false,"scope":"job"}],"capabilities":["cpu","device_probe","device_selection","gpu","independent_instances","integrated_dual","local_http_api","miner_cli_oc","native","wsl_gpu"],"package_namespaces":["builtin-srbminer-","test-srbminer-"],"dual_algorithm_pairs":[["autolykos2","blake3_decred"],["autolykos2","heavyhash"],["autolykos2","qhash"],["autolykos2","walahash"],["etchash","blake3_decred"],["etchash","heavyhash"],["ethash","blake3_decred"],["ethash","heavyhash"],["fishhash","blake3_decred"],["fishhash","qhash"],["fishhash","walahash"],["karlsenhashv2","blake3_decred"],["xhash","blake3_decred"],["xhash","qhash"]],"dual_any_secondary":["progpow_epic","randomepic"],"catalogue":{"version":"3.7.2","commit":"2f84e09039102ac4fc2b53e392c3901833b3d792"},"periodic_cpu_threads_rule":{"secondary_mode":"integrated","primary_algorithms":["progpow_epic","randomepic"],"resources":["cpu","cpu"],"option":"cpu_threads","requires_matching_automatic_status":true,"automatic":"missing_or_null","message":"CPU periodic dual threads must be automatic on both algorithms or explicitly set for both; the current launcher cannot accurately represent mixed automatic and fixed thread slots.","hint":"当前启动器无法准确表达周期 CPU 双任务混合自动/固定线程数；请两腿线程数全部留空，或分别明确设置。"},"protocol_requirements":{"quic":{"algorithms":["quantus"],"minimum_version":"3.6.4","required_options":["tls_cert_sha256"],"wallet_mode_option":"quic_wallet_mode","default_wallet_mode":"wallet","wallet_fields":{"wallet":"wallet_address","token":"pool_password"},"worker_suffix":false}}},{"abi_version":"miner-adapter.v1","adapter_id":"org.pearlfortune.pearl-miner","adapter_revision":1,"miner_type":"pearlminer","display_name":"Pearl Miner","runtime_id":"builtin.pearlminer.v1","telemetry_id":"builtin.pearlminer.log.v1","release":{"provider":"github","owner":"pearlfortune","repository":"pearl-miner","fallback_versions":["2.0.3","1.2.4","1.2.3"],"resolver_id":"github.pearlminer.v1","tag_style":"v_prefix","prerelease_policy":"allow_with_stable_default","version_style":"three_part_numeric"},"platforms":[{"os_family":"windows","executable_candidates":["miner.exe"],"asset_variants":[]},{"os_family":"linux","executable_candidates":["miner","miner-cuda12","miner-cuda13"],"asset_variants":["nvidia","amd"]}],"assets":[{"key":"windows","os_family":"windows","archive_type":"zip","variant":null,"fallback_versions":["1.2.4","1.2.3","1.2.1"]},{"key":"linux-nvidia","os_family":"linux","archive_type":"tar.gz","variant":"nvidia","fallback_versions":["2.0.3","1.2.4","1.2.3","1.2.1"]},{"key":"linux-amd","os_family":"linux","archive_type":"tar.gz","variant":"amd","fallback_versions":["1.2.4","1.2.1"]}],"algorithms":[{"name":"pearlhash","resource_kind":"gpu","coins":["PEARL","PRL"],"aliases":[],"supported_resources":["gpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"}],"default_algorithm":"pearlhash","coin_defaults":{"PEARL":"pearlhash","PRL":"pearlhash"},"resource_kinds":["gpu"],"pool_schemes":["pearl","stratum+ssl","stratum+tcp"],"options":[{"name":"extra_args","type":"string","label":"额外参数","description":"附加矿工命令行参数；支持双/单引号和多行，按字面值传入；不可覆盖钱包、矿池、API、设备、OC 或配置路径","default":"","nullable":false,"scope":"job","min_length":0,"max_length":4096,"multiline":true},{"name":"gpu_backend","type":"choice","label":"GPU Backend","description":"Select the packaged NVIDIA or AMD backend","default":"auto","nullable":false,"scope":"job","choices":["auto","nvidia","amd"]},{"name":"cuda_variant","type":"choice","label":"CUDA Variant","description":"Select an audited CUDA binary","default":"auto","nullable":false,"scope":"job","choices":["auto","cuda12","cuda13"]}],"capabilities":["gpu","independent_instances","log_telemetry","native","wsl_gpu"],"package_namespaces":["builtin-pearlminer-","test-pearlminer-"],"dual_algorithm_pairs":[],"dual_any_secondary":[],"catalogue":null,"periodic_cpu_threads_rule":{},"protocol_requirements":{}},{"abi_version":"miner-adapter.v1","adapter_id":"org.zpalmtree.seine","adapter_revision":1,"miner_type":"seine","display_name":"Seine","runtime_id":"builtin.seine.v1","telemetry_id":"builtin.seine.http.v1","release":{"provider":"github","owner":"zpalmtree","repository":"seine","fallback_versions":["0.2.45","0.2.15"],"resolver_id":"github.seine.v1","tag_style":"v_prefix","prerelease_policy":"stable_only","version_style":"three_part_numeric","minimum_version":"0.2.15"},"platforms":[{"os_family":"windows","executable_candidates":["seine.exe"],"asset_variants":[]},{"os_family":"linux","executable_candidates":["seine"],"asset_variants":[]}],"assets":[{"key":"windows","os_family":"windows","archive_type":"zip","variant":null,"sha256_pinned_versions":["0.2.45","0.2.15"]},{"key":"linux","os_family":"linux","archive_type":"tar.gz","variant":null,"sha256_pinned_versions":["0.2.45","0.2.15"]}],"algorithms":[{"name":"blocknet-argon2id","resource_kind":"cpu","coins":["BNT"],"aliases":[],"supported_resources":["cpu"],"gpu_vendors":[],"gpu_minimum_versions":{},"minimum_version":null,"removed_version":null,"catalogue_status":"current"}],"default_algorithm":"blocknet-argon2id","coin_defaults":{"BNT":"blocknet-argon2id"},"resource_kinds":["cpu"],"pool_schemes":["stratum+tcp"],"options":[{"name":"cpu_threads","type":"integer","label":"CPU 线程","description":"留空由Seine按CPU/RAM/cgroup自动选择；每线程约2GiB，不能盲目使用全部核","default":null,"nullable":true,"scope":"job","minimum":1},{"name":"cpu_profile","type":"choice","label":"CPU 性能模式","description":"沿用Seine性能预设；留空恢复上游balanced默认","default":"balanced","nullable":true,"scope":"job","choices":["balanced","throughput","efficiency"]},{"name":"extra_args","type":"string","label":"额外参数","description":"附加字面参数，不得覆盖CPU模式、钱包、矿池、API、设备或私有运行路径","default":"","nullable":false,"scope":"job","min_length":0,"max_length":4096,"multiline":true}],"capabilities":["cpu","independent_instances","local_http_api","native"],"package_namespaces":["builtin-seine-","test-seine-"],"dual_algorithm_pairs":[],"dual_any_secondary":[],"catalogue":null,"periodic_cpu_threads_rule":{},"protocol_requirements":{}}]</script>
+  <script src="/static/pci-identity-data.js?v=0.8.55-public-1" defer></script>
+  <script src="/static/app.js?v=0.8.55-public-1" defer></script>
+</body>
+</html>
