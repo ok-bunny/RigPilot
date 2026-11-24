@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly MARKER="/var/lib/rigpilotos/root-grown"
+# Disk enumeration may still be settling during the first resize attempt.
+readonly DISK_SETTLE_ATTEMPTS=12
+readonly GROW_ATTEMPTS=6
+readonly RESIZE_ATTEMPTS=3
+readonly RETRY_SLEEP_SECONDS=5
+
+fail() {
+    printf 'RigPilotOS root expansion refused: %s\n' "$*" >&2
+    exit 1
+}
+
+[[ "${EUID}" -eq 0 ]] || fail "root is required"
+[[ -e "${MARKER}" ]] && exit 0
+
+root_source="$(findmnt -n -o SOURCE /)"
+root_source="$(readlink -f -- "${root_source}")"
+[[ -b "${root_source}" && "$(lsblk -dn -o TYPE -- "${root_source}")" == "part" ]] || \
+    fail "the root filesystem is not a direct disk partition"
+[[ "$(blkid -s TYPE -o value -- "${root_source}")" == "ext4" ]] || fail "root is not ext4"
+[[ "$(blkid -s LABEL -o value -- "${root_source}")" == "RIGPILOT_ROOT" ]] || \
+    fail "root label does not match this appliance"
+
+root_name="${root_source##*/}"
+[[ -r "/sys/class/block/${root_name}/partition" ]] || fail "root partition number is unavailable"
+part_number="$(cat "/sys/class/block/${root_name}/partition")"
+parent_name="$(lsblk -dn -o PKNAME -- "${root_source}")"
+[[ "${part_number}" == "4" && -n "${parent_name}" ]] || fail "unexpected root partition layout"
+disk="/dev/${parent_name}"
+[[ -b "${disk}" && "$(lsblk -dn -o TYPE -- "${disk}")" == "disk" ]] || fail "parent is not a disk"
+
+case "${disk}" in
+    *[0-9]) partition_path() { printf '%sp%s' "${disk}" "$1"; } ;;
+    *) partition_path() { printf '%s%s' "${disk}" "$1"; } ;;
+esac
+config_partition="$(partition_path 1)"
+efi_partition="$(partition_path 3)"
+[[ "$(blkid -s LABEL -o value -- "${config_partition}")" == "RIGPILOT" ]] || \
+    fail "registration partition does not match this appliance"
+[[ "$(blkid -s LABEL -o value -- "${efi_partition}")" == "RIGP_EFI" ]] || \
+    fail "EFI partition does not match this appliance"
+last_partition="$(lsblk -nr -o NAME,TYPE -- "${disk}" | awk '$2 == "part" { last = $1 } END { print last }')"
+[[ -n "${last_partition}" && "/dev/${last_partition}" == "${root_source}" ]] || \
+    fail "root is not the final partition"
+
+# Let udev finish processing the just-booted destination disk before any
+# partition-table read.  This is best effort: the retry loops below, not this
+# settle call, carry the actual early-boot timing tolerance.
+udevadm settle --timeout=30 >/dev/null 2>&1 || true
+settle_attempt=0
+disk_settled=1
+while [[ "${settle_attempt}" -lt "${DISK_SETTLE_ATTEMPTS}" ]]; do
+    settle_attempt=$((settle_attempt + 1))
+    if [[ -r "/sys/class/block/${parent_name}/size" && \
+          -r "/sys/class/block/${parent_name}/ro" && \
+          "$(cat "/sys/class/block/${parent_name}/ro" 2>/dev/null || echo 1)" == "0" ]]; then
+        disk_settled=0
+        break
+    fi
+    sleep "${RETRY_SLEEP_SECONDS}"
+done
+if [[ "${disk_settled}" -ne 0 ]]; then
+    printf 'RigPilotOS root expansion: %s attributes did not settle; trying the grow anyway\n' \
+        "${disk}" >&2
+fi
+
+# Move the backup GPT to the end of a larger destination disk, then extend
+# only partition 4.  growpart reports NOCHANGE on an already exact-size disk.
+# Each attempt re-runs the read of the partition table that failed transiently
+# at boot on real hardware.  errexit stays off for both retry loops so a
+# failed attempt is diagnosed and retried instead of aborting the helper.
+set +e
+grow_attempt=0
+grow_output=""
+grow_done=0
+while [[ "${grow_attempt}" -lt "${GROW_ATTEMPTS}" ]]; do
+    grow_attempt=$((grow_attempt + 1))
+    grow_output="$(sgdisk -e "${disk}" 2>&1 && growpart "${disk}" 4 2>&1)"
+    if [[ $? -eq 0 || "${grow_output}" == *NOCHANGE* ]]; then
+        grow_done=1
+        break
+    fi
+    printf 'RigPilotOS root expansion attempt %s/%s failed; retrying in %ss:\n%s\n' \
+        "${grow_attempt}" "${GROW_ATTEMPTS}" "${RETRY_SLEEP_SECONDS}" "${grow_output}" >&2
+    sleep "${RETRY_SLEEP_SECONDS}"
+done
+if [[ "${grow_done}" -eq 0 ]]; then
+    printf '%s\n' "${grow_output}" >&2
+    set -e
+    fail "growpart failed after ${GROW_ATTEMPTS} attempts"
+fi
+
+# resize2fs is restartable by design, so transient early-boot failures (for
+# example a kernel that has not finished re-reading the grown partition) are
+# retried briefly.  A filesystem the kernel genuinely cannot resize fails
+# here after a few quick attempts without blocking the boot.
+resize_attempt=0
+resize_done=0
+while [[ "${resize_attempt}" -lt "${RESIZE_ATTEMPTS}" ]]; do
+    resize_attempt=$((resize_attempt + 1))
+    if resize2fs "${root_source}"; then
+        resize_done=1
+        break
+    fi
+    printf 'RigPilotOS root filesystem resize attempt %s/%s failed; retrying in %ss\n' \
+        "${resize_attempt}" "${RESIZE_ATTEMPTS}" "${RETRY_SLEEP_SECONDS}" >&2
+    sleep "${RETRY_SLEEP_SECONDS}"
+done
+set -e
+[[ "${resize_done}" -ne 0 ]] || fail "resize2fs failed after ${RESIZE_ATTEMPTS} attempts"
+
+install -d -m 0755 -o root -g root "$(dirname -- "${MARKER}")"
+printf 'completed\n' >"${MARKER}.tmp"
+chown root:root "${MARKER}.tmp"
+chmod 0644 "${MARKER}.tmp"
+mv -fT -- "${MARKER}.tmp" "${MARKER}"

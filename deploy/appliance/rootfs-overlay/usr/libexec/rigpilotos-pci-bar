@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly PCI_ROOT="${RIGPILOTOS_PCI_DEVICES_ROOT:-/sys/bus/pci/devices}"
+readonly NVIDIA_VENDOR="0x10de"
+
+usage() {
+    cat <<'EOF'
+Usage: rigpilotos-pci-bar COMMAND
+
+Commands:
+  status             Diagnose NVIDIA PCI BAR and driver state
+  next-recovery      Use pci=realloc=on for the next boot only
+  next-acpi-fallback Use pci=realloc=on,nocrs for the next boot only
+  cancel-next        Cancel a scheduled one-time recovery boot
+
+The ACPI fallback ignores firmware PCI host-bridge windows and is riskier.
+Use it only after the normal recovery entry failed and only with local access.
+EOF
+}
+
+as_root() {
+    if [[ "${EUID}" -eq 0 ]]; then
+        "$@"
+    else
+        sudo -- "$@"
+    fi
+}
+
+nvidia_display_devices() {
+    local device vendor class_code
+    for device in "${PCI_ROOT}"/*; do
+        [[ -d "${device}" && -r "${device}/vendor" && -r "${device}/class" ]] || continue
+        IFS= read -r vendor <"${device}/vendor" || continue
+        IFS= read -r class_code <"${device}/class" || continue
+        [[ "${vendor,,}" == "${NVIDIA_VENDOR}" ]] || continue
+        [[ "${class_code,,}" == 0x03???? ]] || continue
+        printf '%s\n' "${device}"
+    done
+}
+
+bar1_is_zero() {
+    local device="$1" start end flags
+    [[ -r "${device}/resource" ]] || return 1
+    read -r start end flags < <(sed -n '2p' "${device}/resource") || return 1
+    [[ "${start}" =~ ^0x0+$ && "${end}" =~ ^0x0+$ ]]
+}
+
+bar1_is_allocated() {
+    local device="$1" start end flags
+    [[ -r "${device}/resource" ]] || return 1
+    read -r start end flags < <(sed -n '2p' "${device}/resource") || return 1
+    [[ "${start}" =~ ^0x[[:xdigit:]]+$ && "${end}" =~ ^0x[[:xdigit:]]+$ ]] || return 1
+    [[ ! "${start}" =~ ^0x0+$ && ! "${end}" =~ ^0x0+$ ]]
+}
+
+normalize_pci_bdf() {
+    local value="${1,,}"
+    # NVML uses an eight-digit domain; sysfs generally uses four.  Compare
+    # their numeric identity rather than accepting just a device count.
+    [[ "${value}" =~ ^([[:xdigit:]]{4,8}):([[:xdigit:]]{2}):([[:xdigit:]]{2})[.]([0-7])$ ]] || return 1
+    printf '%04x:%s:%s.%s\n' "$((16#${BASH_REMATCH[1]}))" \
+        "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[4]}"
+}
+
+has_exact_bar1_failure() {
+    local device
+    while IFS= read -r device; do
+        [[ -n "${device}" ]] || continue
+        if bar1_is_zero "${device}"; then
+            return 0
+        fi
+    done < <(nvidia_display_devices)
+    journalctl -k -b --no-pager 2>/dev/null |
+        grep -E 'NVRM: BAR1 is 0M @ 0x0|BAR 1: no space for' >/dev/null
+}
+
+show_status() {
+    local device state bdf query row failed=0 found=0 queried=0
+    local -A pci_devices=() driver_devices=()
+    printf 'Kernel command line: %s\n' "$(cat /proc/cmdline)"
+    while IFS= read -r device; do
+        [[ -n "${device}" ]] || continue
+        bdf="$(normalize_pci_bdf "${device##*/}")" || { failed=1; continue; }
+        pci_devices["${bdf}"]=1
+        found=$((found + 1))
+        state="unknown"
+        if bar1_is_zero "${device}"; then
+            state="zero/unallocated"
+            failed=1
+        elif bar1_is_allocated "${device}"; then
+            state="allocated"
+        else
+            failed=1
+        fi
+        printf 'NVIDIA PCI device: %s (BAR1: %s)\n' "${device##*/}" "${state}"
+        sed -n '1,3p' "${device}/resource" 2>/dev/null || true
+    done < <(nvidia_display_devices)
+    if [[ "${found}" -eq 0 ]]; then
+        printf 'No NVIDIA display-class PCI device was detected.\n'
+        return 1
+    fi
+    # nvidia-smi can succeed for the remaining healthy cards while another
+    # PCI-visible GPU is unbound or lost.  Require every BDF and reject empty
+    # or diagnostic output even if the utility returns success.
+    if query="$(timeout --kill-after=2s 10s nvidia-smi --query-gpu=pci.bus_id --format=csv,noheader,nounits)"; then
+        while IFS= read -r row; do
+            if bdf="$(normalize_pci_bdf "${row}")"; then
+                if [[ -n "${driver_devices[${bdf}]:-}" ]]; then
+                    failed=1
+                else
+                    queried=$((queried + 1))
+                fi
+                driver_devices["${bdf}"]=1
+            else
+                failed=1
+            fi
+        done <<<"${query}"
+        for bdf in "${!pci_devices[@]}"; do
+            if [[ -z "${driver_devices[${bdf}]:-}" ]]; then
+                printf 'NVIDIA GPU missing from driver enumeration: %s\n' "${bdf}"
+                failed=1
+            fi
+        done
+        [[ "${queried}" -eq "${found}" ]] || failed=1
+    else
+        failed=1
+    fi
+    if [[ "${failed}" -eq 0 ]]; then
+        printf 'NVIDIA driver state: ready for all currently PCI-visible GPUs\n'
+        printf 'This snapshot does not prove historical card count or load stability.\n'
+        return 0
+    fi
+    printf 'NVIDIA driver state: unavailable or incomplete\n'
+    journalctl -k -b --no-pager 2>/dev/null |
+        grep -E 'NVRM|BAR 1|BAR1|nvidia: probe' |
+        tail -n 40 || true
+    return 2
+}
+
+schedule_next() {
+    local entry="$1"
+    [[ -x /usr/sbin/grub-reboot && -x /usr/bin/grub-editenv ]] || {
+        printf 'GRUB one-time recovery tooling is unavailable.\n' >&2
+        exit 1
+    }
+    grep -q -- "--id ${entry}" /boot/grub/grub.cfg || {
+        printf 'The requested recovery entry is missing from grub.cfg.\n' >&2
+        exit 1
+    }
+    has_exact_bar1_failure || {
+        printf 'Refusing recovery: an exact NVIDIA BAR1 allocation failure was not proven.\n' >&2
+        exit 1
+    }
+    as_root /usr/sbin/grub-reboot "${entry}"
+    printf 'One-time GRUB entry scheduled: %s\n' "${entry}"
+    printf 'Reboot explicitly when local recovery access is available.\n'
+}
+
+case "${1:-}" in
+    status)
+        show_status
+        ;;
+    next-recovery)
+        schedule_next rigpilotos-pci-realloc
+        ;;
+    next-acpi-fallback)
+        [[ "${2:-}" == "--i-understand-the-risk" ]] || {
+            printf 'Advanced fallback requires --i-understand-the-risk.\n' >&2
+            exit 2
+        }
+        schedule_next rigpilotos-pci-nocrs
+        ;;
+    cancel-next)
+        as_root /usr/bin/grub-editenv - unset next_entry
+        printf 'Any scheduled one-time GRUB recovery entry was cleared.\n'
+        ;;
+    -h|--help|help|'')
+        usage
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac

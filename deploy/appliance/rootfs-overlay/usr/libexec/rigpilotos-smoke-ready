@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+# Report network readiness independently of root filesystem expansion.
+systemctl is-active --quiet systemd-networkd.service
+systemctl is-active --quiet systemd-resolved.service
+
+grow_state="$(systemctl show -p ActiveState --value rigpilotos-grow-root.service 2>/dev/null || echo unknown)"
+grow_result="$(systemctl show -p Result --value rigpilotos-grow-root.service 2>/dev/null || echo unknown)"
+if [ -e /var/lib/rigpilotos/root-grown ]; then
+    grow_marker=present
+else
+    grow_marker=absent
+fi
+printf 'RIGPILOTOS_GROW_ROOT state=%s result=%s marker=%s\n' \
+    "${grow_state}" "${grow_result}" "${grow_marker}"
+
+printf 'RIGPILOTOS_SMOKE_READY_V3\n'

@@ -1,0 +1,80 @@
+#!/bin/sh
+set -eu
+
+# NVIDIA user-space tools may explicitly load the kernel driver even when the
+# machine has no NVIDIA PCI function.  RigPilot polls nvidia-smi on every
+# heartbeat, so an unsuccessful explicit load can otherwise repeat the kernel
+# "NVRM: No NVIDIA GPU found" message indefinitely on the local console.
+#
+# Keep this policy runtime-only.  A machine that is moved to NVIDIA hardware
+# is detected afresh on its next boot and receives the normal 615 driver.
+PCI_DEVICES_ROOT="${RIGPILOTOS_PCI_DEVICES_ROOT:-/sys/bus/pci/devices}"
+MODPROBE_CONFIG_ROOT="${RIGPILOTOS_MODPROBE_CONFIG_ROOT:-/run/modprobe.d}"
+GUARD_FILE="${MODPROBE_CONFIG_ROOT}/rigpilotos-no-nvidia.conf"
+
+has_usable_nvidia=0
+for device in "${PCI_DEVICES_ROOT}"/*; do
+    [ -d "${device}" ] || continue
+    [ -f "${device}/vendor" ] || continue
+    [ -f "${device}/class" ] || continue
+    IFS= read -r vendor <"${device}/vendor" || vendor=""
+    IFS= read -r class_code <"${device}/class" || class_code=""
+    case "${vendor}" in
+        0x10de|0X10DE)
+            case "${class_code}" in
+                0x03????|0X03????)
+                    # BAR1 is the second resource row on NVIDIA display
+                    # functions.  An exact 0/0 allocation is the firmware
+                    # failure that makes repeated nvidia-smi probes noisy and
+                    # useless; recovery boots are allowed once it is assigned.
+                    if [ -r "${device}/resource" ]; then
+                        IFS=' ' read -r bar_start bar_end _bar_flags \
+                            <<EOF
+$(sed -n '2p' "${device}/resource")
+EOF
+                        # sysfs normally pads addresses to 16 digits, but do
+                        # not turn a different zero width into usable BAR1.
+                        bar_start="${bar_start#0x}"
+                        bar_end="${bar_end#0x}"
+                        case "${bar_start}:${bar_end}" in
+                            :*|*:|*[!0:]*) ;;
+                            *) continue ;;
+                        esac
+                    fi
+                    has_usable_nvidia=1
+                    break
+                    ;;
+            esac
+            ;;
+    esac
+done
+
+if [ "${has_usable_nvidia}" -eq 1 ]; then
+    rm -f -- "${GUARD_FILE}"
+    printf '%s\n' 'RigPilotOS NVIDIA guard: usable NVIDIA display hardware found; driver probing enabled.'
+    exit 0
+fi
+
+install -d -m 0755 -- "${MODPROBE_CONFIG_ROOT}"
+temporary="${GUARD_FILE}.tmp.$$"
+trap 'rm -f -- "${temporary}"' EXIT HUP INT TERM
+cat >"${temporary}" <<'EOF'
+# Generated at boot by rigpilotos-nvidia-guard.
+# No usable NVIDIA display function was present. Block explicit userspace
+# probes that would otherwise flood the kernel console; this file lives only
+# in /run. A one-time PCI recovery boot is evaluated afresh before this guard.
+blacklist nvidia
+blacklist nvidia_drm
+blacklist nvidia_modeset
+blacklist nvidia_uvm
+blacklist nvidia_peermem
+install nvidia /bin/false
+install nvidia_drm /bin/false
+install nvidia_modeset /bin/false
+install nvidia_uvm /bin/false
+install nvidia_peermem /bin/false
+EOF
+chmod 0644 "${temporary}"
+mv -f -- "${temporary}" "${GUARD_FILE}"
+trap - EXIT HUP INT TERM
+printf '%s\n' 'RigPilotOS NVIDIA guard: no usable NVIDIA display hardware; repeated driver probing disabled.'

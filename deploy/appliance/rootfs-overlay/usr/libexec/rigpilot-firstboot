@@ -1,0 +1,996 @@
+#!/usr/bin/env python3
+"""One-time, removable-media enrollment for the RigPilot Ubuntu appliance.
+
+This module intentionally contains no controller discovery and accepts no path
+or controller override from the command line.  The appliance image owns those
+trust decisions; the removable registration file supplies only a one-time
+token and an optional device name.
+"""
+
+from __future__ import annotations
+
+import json
+import hashlib
+import os
+import re
+import secrets
+import stat
+import subprocess
+import sys
+import time
+import unicodedata
+import urllib.error
+import urllib.request
+from urllib.parse import urlsplit
+import uuid
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+ENROLLMENT_SCHEMA = "rigpilot.enrollment.v1"
+REPLACEMENT_SCHEMA = "rigpilot.replacement.v1"
+# Backward-compatible public name used by existing appliance tests/tools.
+SCHEMA = ENROLLMENT_SCHEMA
+PROVISION_FILE = Path("/run/rigpilot-provision/rigpilot-enroll.json")
+REPLACEMENT_FILE = Path("/run/rigpilot-provision/rigpilot-replace.json")
+RETRY_MARKER = Path("/run/rigpilot-provision/.rigpilot-enrollment-retry")
+STAGED_PACKAGE = Path("/usr/lib/rigpilot-bootstrap/package")
+CONFIG_FILE = Path("/etc/rigpilot-agent/config.json")
+STATE_FILE = Path("/var/lib/rigpilot-agent/state.json")
+REGISTRATION_JOURNAL = Path(
+    "/var/lib/rigpilot-agent/firstboot-registration.json"
+)
+MAX_PROVISION_BYTES = 4096
+CONTROLLER_PROBE_ATTEMPTS = 6
+CONTROLLER_PROBE_TIMEOUT_SECONDS = 10
+CONTROLLER_PROBE_DELAY_SECONDS = 5
+# Bounded wait for the installed Agent service to reach its running state.
+# Since image 0.2.11 (Agent 0.8.58/0.8.59) the retired HiveOS preparation
+# loop and the Spark remote-session/local-web policy gate are gone; the
+# remaining post-install obligation is that rigpilot-agent.service is
+# demonstrably active with a main process before the media is consumed.
+INSTALLED_SERVICE_ATTEMPTS = 30
+INSTALLED_SERVICE_DELAY_SECONDS = 2
+# Emitted only after Agent enrollment v2 proves no registration was created
+# and durably removes its nonce/proposed-secret pending state.
+ENROLLMENT_NOT_CREATED_EXIT_CODE = 10
+
+_TOKEN_RE = re.compile(r"rpe_[A-Za-z0-9_-]{43}\Z")
+_REPLACEMENT_TOKEN_RE = re.compile(r"rpr_[A-Za-z0-9_-]{43}\Z")
+_AGENT_SECRET_RE = re.compile(r"rpa_[A-Za-z0-9_-]{48}\Z")
+
+
+class ProvisionError(RuntimeError):
+    """A permanent, non-secret provisioning error."""
+
+
+class ProvisionRetry(RuntimeError):
+    """A transient operation that a systemd timer may retry."""
+
+
+class EnrollmentNotCreated(ProvisionError):
+    """The verified Agent positively confirmed a rejected ordinary exchange."""
+
+
+@dataclass(frozen=True)
+class Enrollment:
+    token: str
+    name: str | None
+
+
+@dataclass(frozen=True)
+class Replacement:
+    token: str
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ProvisionError("registration file contains a duplicate key")
+        value[key] = item
+    return value
+
+
+def _read_fixed_regular_file(path: Path, maximum: int) -> bytes:
+    """Read one bounded regular file without following a final symlink."""
+
+    # Reject a FIFO by fstat without waiting for another process to open it.
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        raise
+    except OSError as exc:
+        raise ProvisionError("file cannot be opened safely") from exc
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise ProvisionError("path is not a regular file")
+        if before.st_size <= 0 or before.st_size > maximum:
+            raise ProvisionError("file size is invalid")
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, min(65536, maximum + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > maximum:
+                raise ProvisionError("file size is invalid")
+        after = os.fstat(descriptor)
+        unchanged = (
+            before.st_dev == after.st_dev
+            and before.st_ino == after.st_ino
+            and before.st_size == after.st_size
+            and before.st_mtime_ns == after.st_mtime_ns
+        )
+        payload = b"".join(chunks)
+        if not unchanged or len(payload) != before.st_size:
+            raise ProvisionError("file changed while being read")
+        return payload
+    finally:
+        os.close(descriptor)
+
+
+def _read_registration_document(path: Path, description: str) -> dict[str, Any]:
+    """Accept UTF-8 media with an optional leading BOM; retain schema rules."""
+
+    payload = _read_fixed_regular_file(path, MAX_PROVISION_BYTES)
+    try:
+        text = payload.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ProvisionError(f"{description} is not valid UTF-8") from exc
+    try:
+        document = json.loads(text, object_pairs_hook=_reject_duplicate_keys)
+    except (json.JSONDecodeError, RecursionError) as exc:
+        raise ProvisionError(f"{description} is not valid JSON") from exc
+    if not isinstance(document, dict):
+        raise ProvisionError(f"{description} root must be an object")
+    return document
+
+
+def parse_enrollment(path: Path = PROVISION_FILE) -> Enrollment:
+    """Parse v1 media; Controller/path overrides are deliberately excluded."""
+
+    document = _read_registration_document(path, "registration file")
+    allowed = {"schema", "enrollment_token", "name"}
+    if set(document) - allowed:
+        raise ProvisionError("registration file contains an unsupported key")
+    if {"schema", "enrollment_token"} - document.keys():
+        raise ProvisionError("registration file is missing a required key")
+    if document["schema"] != SCHEMA:
+        raise ProvisionError("registration schema is unsupported")
+
+    token = document["enrollment_token"]
+    if not isinstance(token, str) or _TOKEN_RE.fullmatch(token) is None:
+        raise ProvisionError("one-time enrollment token format is invalid")
+
+    raw_name = document.get("name")
+    name: str | None
+    if raw_name is None or raw_name == "":
+        name = None
+    elif not isinstance(raw_name, str):
+        raise ProvisionError("device name must be a string")
+    else:
+        name = unicodedata.normalize("NFC", raw_name)
+        if (
+            not 1 <= len(name) <= 80
+            or name != name.strip()
+            or any(unicodedata.category(character).startswith("C") for character in name)
+        ):
+            raise ProvisionError("device name format is invalid")
+    return Enrollment(token=token, name=name)
+
+
+def parse_replacement(path: Path = REPLACEMENT_FILE) -> Replacement:
+    """Strictly parse a server-bound clean-install inheritance token."""
+
+    document = _read_registration_document(path, "device inheritance file")
+    if set(document) != {"schema", "replacement_token"}:
+        raise ProvisionError("device inheritance file has an invalid shape")
+    if document["schema"] != REPLACEMENT_SCHEMA:
+        raise ProvisionError("device inheritance schema is unsupported")
+    token = document["replacement_token"]
+    if (
+        not isinstance(token, str)
+        or _REPLACEMENT_TOKEN_RE.fullmatch(token) is None
+    ):
+        raise ProvisionError("one-time device inheritance token format is invalid")
+    return Replacement(token=token)
+
+
+def parse_registration() -> tuple[Enrollment | Replacement, Path]:
+    enrollment_exists = PROVISION_FILE.exists() or PROVISION_FILE.is_symlink()
+    replacement_exists = REPLACEMENT_FILE.exists() or REPLACEMENT_FILE.is_symlink()
+    if enrollment_exists and replacement_exists:
+        raise ProvisionError(
+            "normal enrollment and device inheritance files cannot be used together"
+        )
+    if replacement_exists:
+        return parse_replacement(), REPLACEMENT_FILE
+    if enrollment_exists:
+        return parse_enrollment(), PROVISION_FILE
+    raise FileNotFoundError(str(PROVISION_FILE))
+
+
+def controller_url() -> str:
+    """Load the operator's HTTPS endpoint from the root-owned service environment."""
+    url = os.environ.get("RIGPILOT_CONTROLLER_URL", "").strip()
+    try:
+        parts = urlsplit(url)
+        valid = (
+            parts.scheme == "https" and parts.hostname
+            and parts.username is None and parts.password is None
+            and not parts.query and not parts.fragment and parts.port != 0
+            and not any(char.isspace() or ord(char) < 32 for char in url)
+            and "\\" not in url
+        )
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ProvisionError("Set RIGPILOT_CONTROLLER_URL to your HTTPS controller in /etc/rigpilotos-controller.env")
+    return url.rstrip("/")
+
+
+def agent_config(name: str | None) -> dict[str, Any]:
+    """Return the same non-interactive Linux policy used by Install.sh."""
+
+    return {
+        "server_url": controller_url(),
+        "state_file": str(STATE_FILE),
+        "name": name,
+        "heartbeat_interval": 30,
+        "request_timeout": 20,
+        "log_level": "INFO",
+        "log_file": "/var/lib/rigpilot-agent/logs/agent.jsonl",
+        "dry_run": False,
+        "service_allowlist": [],
+        "allow_reboot": True,
+        "allow_shutdown": True,
+        "allow_agent_updates": True,
+        # RigPilotOS installs the Agent into a fixed, root-owned system path
+        # and builds the pinned official NVIDIA open module with DKMS.  The
+        # retired feature keys (allow_nvidia_driver_updates, the remote
+        # session/local web family) are deliberately absent since 0.2.11 so
+        # the committed document stays exactly equal to what Agent 0.8.58+
+        # Install.sh preserves, and first-boot recovery validation remains
+        # byte-independent exact after any power-loss resume.
+        "agent_update_max_mb": 512,
+        "agent_update_total_timeout": 900,
+        "collect_gpu_metrics": True,
+        "nvidia_smi_path": "nvidia-smi",
+        "advertise_ssh": True,
+        "advertise_sftp": True,
+        "ssh_port": 22,
+        "ssh_username": None,
+        "flight_sheet_file": "/var/lib/rigpilot-agent/flight-sheet.json",
+        "miner_status_file": "/var/lib/rigpilot-agent/miner-runtime/miner-status.json",
+        "managed_mining_enabled": True,
+        "managed_miner_runtime_dir": "/var/lib/rigpilot-agent/miner-runtime",
+        "miner_profile_allowlist": [],
+        "flight_sheet_extra_key_allowlist": [],
+        "miner_service": None,
+        "allow_miner_downloads": True,
+        "miner_packages_dir": "/var/lib/rigpilot-agent/packages",
+        "miner_download_host_allowlist": [],
+        "miner_download_max_mb": 512,
+        "miner_download_total_timeout": 300,
+        "allow_gpu_oc": True,
+        "gpu_oc_allowed_vendors": ["nvidia"],
+        "command_history_limit": 200,
+    }
+
+
+def _atomic_json(path: Path, value: dict[str, Any], mode: int = 0o600) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.appliance-{os.getpid()}")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
+    descriptor = os.open(temporary, flags, mode)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+        if os.name != "nt":
+            directory = os.open(
+                path.parent,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+            )
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _validate_state(path: Path = STATE_FILE) -> str:
+    try:
+        payload = _read_fixed_regular_file(path, 1024 * 1024)
+        document = json.loads(payload.decode("utf-8"))
+    except (FileNotFoundError, UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+        raise ProvisionError("Agent identity state is missing or invalid") from exc
+    if not isinstance(document, dict):
+        raise ProvisionError("Agent identity state is invalid")
+    try:
+        uuid.UUID(document.get("agent_id", ""))
+    except (AttributeError, ValueError) as exc:
+        raise ProvisionError("Agent identity state is invalid") from exc
+    secret = document.get("agent_secret")
+    enrolled_at = document.get("enrolled_at")
+    history = document.get("command_history", {})
+    if (
+        not isinstance(secret, str)
+        or _AGENT_SECRET_RE.fullmatch(secret) is None
+        or not isinstance(enrolled_at, str)
+        or not enrolled_at
+        or not isinstance(history, dict)
+    ):
+        raise ProvisionError("Agent identity state is invalid")
+    return str(document["agent_id"])
+
+
+def _registration_journal_identity(
+    registration: Enrollment | Replacement,
+) -> tuple[str, str]:
+    schema = (
+        REPLACEMENT_SCHEMA
+        if isinstance(registration, Replacement)
+        else ENROLLMENT_SCHEMA
+    )
+    digest = hashlib.sha256(registration.token.encode("ascii")).hexdigest()
+    return schema, digest
+
+
+def _load_registration_journal() -> dict[str, str] | None:
+    if not (REGISTRATION_JOURNAL.exists() or REGISTRATION_JOURNAL.is_symlink()):
+        return None
+    try:
+        payload = _read_fixed_regular_file(REGISTRATION_JOURNAL, 4096)
+        document = json.loads(payload.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError, RecursionError) as exc:
+        raise ProvisionError("first-boot registration journal is invalid") from exc
+    if not isinstance(document, dict):
+        raise ProvisionError("first-boot registration journal is invalid")
+    phase = document.get("phase")
+    expected_keys = (
+        {"schema", "token_sha256", "phase"}
+        if phase == "exchange_started"
+        else {"schema", "token_sha256", "phase", "agent_id"}
+    )
+    if (
+        set(document) != expected_keys
+        or document.get("schema")
+        not in (ENROLLMENT_SCHEMA, REPLACEMENT_SCHEMA)
+        or not isinstance(document.get("token_sha256"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", document["token_sha256"]) is None
+        or phase not in ("exchange_started", "registered")
+    ):
+        raise ProvisionError("first-boot registration journal is invalid")
+    if phase == "registered":
+        try:
+            uuid.UUID(str(document.get("agent_id") or ""))
+        except ValueError as exc:
+            raise ProvisionError(
+                "first-boot registration journal is invalid"
+            ) from exc
+    return {str(key): str(value) for key, value in document.items()}
+
+
+def _validate_registration_journal(
+    registration: Enrollment | Replacement,
+    journal: dict[str, str],
+) -> None:
+    schema, token_sha256 = _registration_journal_identity(registration)
+    if not (
+        secrets.compare_digest(
+            str(journal.get("schema") or "").encode("ascii"),
+            schema.encode("ascii"),
+        )
+        and secrets.compare_digest(
+            str(journal.get("token_sha256") or "").encode("ascii"),
+            token_sha256.encode("ascii"),
+        )
+    ):
+        raise ProvisionError(
+            "registration file does not match the interrupted first-boot exchange"
+        )
+
+
+def _write_registration_journal(
+    registration: Enrollment | Replacement,
+    *,
+    phase: str,
+    agent_id: str | None = None,
+) -> None:
+    schema, token_sha256 = _registration_journal_identity(registration)
+    document = {
+        "schema": schema,
+        "token_sha256": token_sha256,
+        "phase": phase,
+    }
+    if phase == "registered":
+        if agent_id is None:
+            raise ProvisionError("registered journal requires an Agent identity")
+        document["agent_id"] = agent_id
+    elif phase != "exchange_started" or agent_id is not None:
+        raise ProvisionError("first-boot registration journal phase is invalid")
+    _atomic_json(REGISTRATION_JOURNAL, document)
+
+
+def _remove_registration_journal() -> None:
+    try:
+        REGISTRATION_JOURNAL.unlink(missing_ok=True)
+        if os.name != "nt":
+            directory = os.open(
+                REGISTRATION_JOURNAL.parent,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+            )
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    except OSError as exc:
+        raise ProvisionRetry(
+            "registration completed but journal cleanup must be retried"
+        ) from exc
+
+
+def _retire_uncreated_enrollment_exchange(registration: Enrollment) -> None:
+    """Release only the old attempt positively rejected by this CLI invocation.
+
+    A missing Agent pending file is never sufficient authority. This function
+    is reachable only for the verified binary's dedicated exit code 10. Media
+    may already contain a corrected token; it is deliberately left untouched.
+    """
+
+    if not isinstance(registration, Enrollment):
+        raise ProvisionError("only an ordinary enrollment exchange can be retired")
+
+    def journal_signature() -> tuple[int, int, int, int, int]:
+        info = REGISTRATION_JOURNAL.lstat()
+        if not stat.S_ISREG(info.st_mode):
+            raise ProvisionError("first-boot registration journal is unsafe")
+        return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+    try:
+        signature = journal_signature()
+        journal = _load_registration_journal()
+        if journal is None or journal.get("phase") != "exchange_started":
+            raise ProvisionError("rejected enrollment no longer owns an exchange_started journal")
+        _validate_registration_journal(registration, journal)
+        _validate_registration_config(registration)
+        pending = STATE_FILE.with_name(f".{STATE_FILE.name}.enrollment-pending")
+        for path in (STATE_FILE, pending, _replacement_pending_path()):
+            try:
+                path.lstat()
+            except FileNotFoundError:
+                continue
+            raise ProvisionError("Agent identity or private exchange state prevents retiring enrollment")
+        for path in STATE_FILE.parent.iterdir():
+            if path.name.startswith(pending.name + ".") and path.name.endswith(".tmp"):
+                raise ProvisionError("Agent enrollment temporary state prevents retiring enrollment")
+        if journal_signature() != signature:
+            raise ProvisionError("first-boot registration journal changed during rejection checks")
+    except OSError as exc:
+        raise ProvisionRetry("rejected enrollment cleanup could not be verified safely") from exc
+    try:
+        _remove_registration_journal()
+    except ProvisionRetry as exc:
+        raise ProvisionRetry("rejected enrollment journal cleanup must be retried") from exc
+
+
+def _replacement_pending_path() -> Path:
+    """Return the Agent's durable replacement exchange scratch file.
+
+    Keep this derived from ``STATE_FILE`` at call time.  Apart from making the
+    relationship explicit, that also prevents a future state-path change from
+    leaving the credential-bearing scratch file outside firstboot's success
+    gate.
+    """
+
+    return STATE_FILE.with_name(f".{STATE_FILE.name}.replacement-pending")
+
+
+def _require_replacement_exchange_settled() -> None:
+    """Refuse to finish while replacement idempotency credentials remain.
+
+    The Agent normally removes this file after saving the inherited identity.
+    A failed unlink is intentionally retryable: the installed Agent service
+    gets another opportunity to remove it, while firstboot never reports a
+    completed appliance containing the proposed long-term secret.
+    """
+
+    path = _replacement_pending_path()
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise ProvisionRetry(
+            "Agent replacement credential cleanup could not be verified"
+        ) from exc
+    raise ProvisionRetry(
+        "Agent replacement credential cleanup is not complete"
+    )
+
+
+def _registration_config(
+    registration: Enrollment | Replacement,
+) -> dict[str, Any]:
+    """Return the only canonical config allowed for this registration file."""
+
+    return agent_config(
+        registration.name if isinstance(registration, Enrollment) else None
+    )
+
+
+def _load_existing_config(path: Path | None = None) -> dict[str, Any]:
+    if path is None:
+        path = CONFIG_FILE
+    try:
+        payload = _read_fixed_regular_file(path, 1024 * 1024)
+        document = json.loads(
+            payload.decode("utf-8"), object_pairs_hook=_reject_duplicate_keys
+        )
+    except ProvisionError:
+        raise
+    except (FileNotFoundError, UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+        raise ProvisionError("Agent configuration is missing or invalid") from exc
+    if not isinstance(document, dict):
+        raise ProvisionError("Agent configuration violates appliance policy")
+    return document
+
+
+def _validate_existing_config(path: Path | None = None) -> None:
+    """Validate an already-committed config when no media remains.
+
+    The device name is the only registration-specific field unavailable after
+    removable media has been consumed.  Every other key and value must still
+    be the exact appliance-generated policy.
+    """
+
+    document = _load_existing_config(path)
+    name = document.get("name")
+    if name is not None and (
+        not isinstance(name, str)
+        or not 1 <= len(name) <= 80
+        or name != name.strip()
+        or name != unicodedata.normalize("NFC", name)
+        or any(unicodedata.category(character).startswith("C") for character in name)
+    ):
+        raise ProvisionError("Agent configuration violates appliance policy")
+    if document != agent_config(name):
+        raise ProvisionError("Agent configuration violates appliance policy")
+
+
+def _validate_registration_config(
+    registration: Enrollment | Replacement,
+    path: Path | None = None,
+) -> None:
+    """Bind a pre-existing config to the exact current registration file."""
+
+    if _load_existing_config(path) != _registration_config(registration):
+        raise ProvisionError(
+            "Agent configuration does not match the current registration file"
+        )
+
+
+def _validate_staged_package(package: Path = STAGED_PACKAGE) -> tuple[Path, Path]:
+    if package.is_symlink() or not package.is_dir():
+        raise ProvisionError("staged Agent package is missing or unsafe")
+    binary = package / "RigPilotAgent"
+    installer = package / "Install.sh"
+    for path in (binary, installer, package / "SHA256SUMS"):
+        if path.is_symlink() or not path.is_file():
+            raise ProvisionError("staged Agent package is incomplete or unsafe")
+    actual_files: set[str] = set()
+    for path in package.rglob("*"):
+        info = path.lstat()
+        if stat.S_ISLNK(info.st_mode) or not (
+            stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)
+        ):
+            raise ProvisionError("staged Agent package contains an unsafe entry")
+        if stat.S_ISREG(info.st_mode):
+            actual_files.add(path.relative_to(package).as_posix())
+    try:
+        checksum_lines = (package / "SHA256SUMS").read_text(
+            encoding="ascii"
+        ).splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise ProvisionError("staged Agent package checksum list is invalid") from exc
+    declared_files: set[str] = set()
+    for line in checksum_lines:
+        match = re.fullmatch(r"[0-9a-f]{64}  ([^\r\n]+)", line)
+        if match is None:
+            raise ProvisionError("staged Agent package checksum list is invalid")
+        name = match.group(1)
+        parts = name.split("/")
+        if (
+            name.startswith("/")
+            or any(part in {"", ".", ".."} for part in parts)
+            or "\\" in name
+            or name in declared_files
+        ):
+            raise ProvisionError("staged Agent package checksum list is invalid")
+        declared_files.add(name)
+    if declared_files != actual_files - {"SHA256SUMS"}:
+        raise ProvisionError("staged Agent package checksum list is incomplete")
+    try:
+        check = subprocess.run(
+            ["sha256sum", "--check", "--strict", "SHA256SUMS"],
+            cwd=package,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ProvisionError("staged Agent package could not be verified") from exc
+    if check.returncode != 0:
+        raise ProvisionError("staged Agent package integrity check failed")
+    return binary, installer
+
+
+def _run_registration(binary: Path, registration: Enrollment | Replacement) -> None:
+    environment = os.environ.copy()
+    token_variable = (
+        "RIGPILOT_REPLACEMENT_TOKEN"
+        if isinstance(registration, Replacement)
+        else "RIGPILOT_ENROLLMENT_TOKEN"
+    )
+    environment[token_variable] = registration.token
+    try:
+        result = subprocess.run(
+            [str(binary), "--config", str(CONFIG_FILE), "--once"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=environment,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ProvisionRetry("Agent registration is temporarily unavailable") from exc
+    finally:
+        environment.pop(token_variable, None)
+    if isinstance(registration, Enrollment) and result.returncode == ENROLLMENT_NOT_CREATED_EXIT_CODE:
+        # Do not infer this result from generic 401 text, missing pending state,
+        # or replacement failures. The dedicated code is the Agent contract.
+        raise EnrollmentNotCreated("Agent confirmed enrollment was not created")
+    if result.returncode != 0:
+        output = "\n".join(
+            value.strip() for value in (result.stdout, result.stderr) if value.strip()
+        )
+        output = output.replace(registration.token, "[redacted]")
+        output = re.sub(r"rp[er]_[A-Za-z0-9_-]{20,256}", "[redacted]", output)
+        detail = output[-1200:] if output else "Agent returned a non-zero exit code"
+        raise ProvisionRetry(f"Agent registration failed: {detail}")
+
+
+def _wait_for_controller() -> None:
+    """Require DNS, TLS certificate validation and an HTTP response.
+
+    The one-time token is deliberately not part of this request.  Exceptions
+    are collapsed to a fixed message so hostnames, proxy details and response
+    bodies cannot leak into the first-boot journal.
+    """
+
+    request = urllib.request.Request(
+        controller_url() + "/api/health",
+        headers={"Accept": "application/json", "User-Agent": "RigPilotOS/firstboot"},
+        method="GET",
+    )
+    for attempt in range(CONTROLLER_PROBE_ATTEMPTS):
+        try:
+            with urllib.request.urlopen(
+                request, timeout=CONTROLLER_PROBE_TIMEOUT_SECONDS
+            ) as response:
+                if 200 <= response.status < 500:
+                    return
+        except (OSError, urllib.error.URLError, ValueError):
+            pass
+        if attempt + 1 < CONTROLLER_PROBE_ATTEMPTS:
+            time.sleep(CONTROLLER_PROBE_DELAY_SECONDS)
+    raise ProvisionRetry("controller network connection is not ready")
+
+
+def _run_installer(installer: Path) -> None:
+    environment = os.environ.copy()
+    # RigPilotOS already ships the reviewed LAN-only OpenSSH policy.  Preserve
+    # it here so enrollment never depends on apt repository reachability.
+    # The retired RIGPILOT_REMOTE_SESSIONS/RIGPILOT_REMOTE_ROOT_SESSIONS
+    # opt-ins (Spark/local-web drop-in installation) are no longer set since
+    # 0.2.11; Agent 0.8.58+ Install.sh removes any legacy drop-in instead.
+    environment["RIGPILOT_LAN_SSH"] = "preserve"
+    try:
+        result = subprocess.run(
+            [str(installer)],
+            cwd=installer.parent,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=environment,
+            timeout=600,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ProvisionRetry("Agent installation is temporarily unavailable") from exc
+    if result.returncode != 0:
+        output = "\n".join(
+            value.strip() for value in (result.stdout, result.stderr) if value.strip()
+        )
+        output = re.sub(r"rp[er]_[A-Za-z0-9_-]{20,256}", "[redacted]", output)
+        detail = output[-1200:] if output else "installer returned a non-zero exit code"
+        raise ProvisionRetry(f"Agent installation failed: {detail}")
+
+
+def _systemd_property(name: str) -> str | None:
+    try:
+        result = subprocess.run(
+            [
+                "/usr/bin/systemctl",
+                "show",
+                "rigpilot-agent.service",
+                f"--property={name}",
+                "--value",
+                "--no-pager",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    value = (result.stdout or "").strip()
+    if result.returncode != 0 or not value or "\n" in value or "\r" in value:
+        return None
+    return value
+
+
+def _installed_agent_service_ready() -> bool:
+    """The installed Agent must be running before the one-time media is eaten.
+
+    This replaced the retired HiveOS preparation loop and Spark/local-web
+    policy gate in 0.2.11.  It verifies only what first-boot itself owes the
+    operator: the idempotent installer finished and rigpilot-agent.service
+    reached the active state with a live main process.
+    """
+
+    return bool(
+        _systemd_property("ActiveState") == "active"
+        and (_systemd_property("MainPID") or "0") not in ("", "0")
+    )
+
+
+def _wait_for_installed_agent_service() -> None:
+    for attempt in range(INSTALLED_SERVICE_ATTEMPTS):
+        if _installed_agent_service_ready():
+            return
+        if attempt + 1 < INSTALLED_SERVICE_ATTEMPTS:
+            time.sleep(INSTALLED_SERVICE_DELAY_SECONDS)
+    raise ProvisionRetry("installed Agent service did not reach the running state")
+
+
+def _set_retry(enabled: bool) -> None:
+    try:
+        if enabled:
+            descriptor = os.open(
+                RETRY_MARKER,
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                0o600,
+            )
+            os.close(descriptor)
+        else:
+            RETRY_MARKER.unlink(missing_ok=True)
+    except OSError:
+        # The marker is only a scheduling hint.  It never changes enrollment
+        # security or success semantics.
+        pass
+
+
+def _consume_registration_file(path: Path = PROVISION_FILE) -> None:
+    try:
+        path.unlink()
+        try:
+            directory = os.open(
+                path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            )
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        except OSError:
+            # Some FAT implementations do not support fsync on a directory.
+            # The global sync below still flushes the removed directory entry.
+            pass
+        if hasattr(os, "sync"):
+            os.sync()
+    except OSError as exc:
+        raise ProvisionRetry("registration succeeded but media cleanup must be retried") from exc
+
+
+def _complete_installed_identity(installer: Path, expected_agent_id: str) -> None:
+    """Install/start the Agent and prove the exact exchanged identity is ready."""
+
+    _run_installer(installer)
+    installed_agent_id = _validate_state()
+    if installed_agent_id != expected_agent_id:
+        raise ProvisionError(
+            "installed Agent identity changed during first-boot registration"
+        )
+    # Install.sh has returned and released its global lock.  The retired
+    # HiveOS component/namespace preparation step is gone since 0.2.11; the
+    # remaining obligation is a demonstrably running installed Agent.
+    _wait_for_installed_agent_service()
+    _require_replacement_exchange_settled()
+
+
+def _resume_registered_journal_without_media(
+    journal: dict[str, str],
+) -> int:
+    """Finish a committed registration after its media file was consumed.
+
+    The removable registration file is intentionally removed before the
+    journal.  Therefore a crash or journal-unlink failure can leave a
+    ``registered`` journal with no media.  Its stored Agent ID is the durable
+    recovery binding: validate that identity, finish the idempotent installer,
+    and retry only the journal cleanup.
+    """
+
+    if journal.get("phase") != "registered":
+        raise ProvisionRetry(
+            "first-boot registration media is missing; reconnect it to continue"
+        )
+    agent_id = _validate_state()
+    _validate_existing_config()
+    if journal.get("agent_id") != agent_id:
+        raise ProvisionError(
+            "Agent identity does not match the first-boot registration journal"
+        )
+    _binary, installer = _validate_staged_package()
+    _complete_installed_identity(installer, agent_id)
+    _remove_registration_journal()
+    _set_retry(False)
+    return 0
+
+
+def apply() -> int:
+    if os.name != "posix" or os.geteuid() != 0:
+        raise ProvisionError("first-boot enrollment must run as root on Linux")
+    journal = _load_registration_journal()
+    try:
+        registration, registration_file = parse_registration()
+    except FileNotFoundError:
+        if journal is not None:
+            return _resume_registered_journal_without_media(journal)
+        _set_retry(False)
+        return 0
+    binary, installer = _validate_staged_package()
+
+    if STATE_FILE.exists() or STATE_FILE.is_symlink():
+        if journal is None:
+            raise ProvisionError(
+                "an Agent identity already exists without a matching first-boot journal"
+            )
+        _validate_registration_journal(registration, journal)
+        agent_id = _validate_state()
+        _validate_existing_config()
+        if journal["phase"] == "registered":
+            if journal.get("agent_id") != agent_id:
+                raise ProvisionError(
+                    "Agent identity does not match the first-boot registration journal"
+                )
+        else:
+            # A crash may occur after the Agent durably saves its state but
+            # before firstboot advances the journal.  Because the journal was
+            # created only after proving the image had no prior identity, this
+            # exact token-bound state is safe to adopt and continue.
+            _write_registration_journal(
+                registration,
+                phase="registered",
+                agent_id=agent_id,
+            )
+    else:
+        for directory in (
+            CONFIG_FILE.parent,
+            STATE_FILE.parent,
+            STATE_FILE.parent / "logs",
+            STATE_FILE.parent / "miner-runtime",
+            STATE_FILE.parent / "packages",
+            STATE_FILE.parent / "agent-updates",
+        ):
+            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if journal is not None:
+            _validate_registration_journal(registration, journal)
+            if journal["phase"] != "exchange_started":
+                raise ProvisionError(
+                    "registered first-boot journal has no Agent identity"
+                )
+            if CONFIG_FILE.exists() or CONFIG_FILE.is_symlink():
+                _validate_registration_config(registration)
+            else:
+                # The token-bound journal is the durable authority.  A crash
+                # after committing it but before the config rename can safely
+                # recreate only the exact config derived from the same media.
+                _atomic_json(CONFIG_FILE, _registration_config(registration))
+        elif CONFIG_FILE.exists() or CONFIG_FILE.is_symlink():
+            # Compatibility with the old config-first sequence.  Adopt only a
+            # byte-independent but structurally exact canonical config bound
+            # to the current removable registration file, then immediately
+            # establish the durable token journal before any network exchange.
+            _validate_registration_config(registration)
+            _write_registration_journal(
+                registration,
+                phase="exchange_started",
+            )
+        else:
+            # Persist the token binding first.  This closes the former crash
+            # window where a canonical config could exist without durable
+            # evidence of which removable secret authorized it.
+            _write_registration_journal(
+                registration,
+                phase="exchange_started",
+            )
+            _atomic_json(
+                CONFIG_FILE,
+                _registration_config(registration),
+            )
+        _wait_for_controller()
+        try:
+            _run_registration(binary, registration)
+        except EnrollmentNotCreated:
+            _retire_uncreated_enrollment_exchange(registration)
+            raise ProvisionError(
+                "enrollment was not created; correct the enrollment token in the retained "
+                "registration file, keep the same device name, and retry"
+            ) from None
+        agent_id = _validate_state()
+        _write_registration_journal(
+            registration,
+            phase="registered",
+            agent_id=agent_id,
+        )
+
+    _complete_installed_identity(installer, agent_id)
+    # Keep the registered journal until the removable secret has been durably
+    # consumed.  If journal cleanup then fails, the no-media recovery path can
+    # safely bind the journal to this exact Agent ID and retry the final step.
+    _consume_registration_file(registration_file)
+    _remove_registration_journal()
+    _set_retry(False)
+    return 0
+
+
+def main() -> int:
+    try:
+        return apply()
+    except ProvisionRetry as exc:
+        _set_retry(True)
+        print(str(exc), file=sys.stderr)
+        return 75
+    except ProvisionError as exc:
+        _set_retry(False)
+        print(str(exc), file=sys.stderr)
+        return 78
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
