@@ -1,0 +1,27 @@
+{
+  "repository": "https://github.com/pciutils/pciids",
+  "commit": "3452638d16a34aa3d6e427d21e4cd0bae0fb884e",
+  "commit_time": "2026-10-09T01:15:05Z",
+  "commit_url": "https://github.com/pciutils/pciids/commit/3452638d16a34aa3d6e427d21e4cd0bae0fb884e",
+  "commit_message": "New snapshot generated",
+  "files": [
+    {
+      "path": "pci.ids",
+      "url": "https://raw.githubusercontent.com/pciutils/pciids/3452638d16a34aa3d6e427d21e4cd0bae0fb884e/pci.ids",
+      "size_bytes": 1671651,
+      "sha256": "25b626586086220f2804d7b11275a5652dac94eceacce216448ab5e5220aace1"
+    },
+    {
+      "path": "README.md",
+      "url": "https://raw.githubusercontent.com/pciutils/pciids/3452638d16a34aa3d6e427d21e4cd0bae0fb884e/README.md",
+      "size_bytes": 585,
+      "sha256": "4caf3739c59c70273bf72fb69db6f1b8e534dec425da3863777db2d9cc01ff1f"
+    }
+  ],
+  "license_choice": "BSD-3-Clause",
+  "license_evidence": [
+    "README.md",
+    "pci.ids header"
+  ],
+  "copyright": "Martin Mares and Albert Pool"
+}
