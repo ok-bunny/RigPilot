@@ -1,0 +1,19 @@
+# Replace rigpilot.example.com with your real DNS name.
+rigpilot.example.com {
+    encode zstd gzip
+
+    # Covers the default 1 GiB miner and 512 MiB Agent limits plus multipart
+    # overhead. Endpoint-specific limits are still enforced by RigPilot.
+    # If RIGPILOT_MAX_MINER_PACKAGE_BYTES or
+    # RIGPILOT_MAX_AGENT_RELEASE_BYTES is raised, review this proxy limit too.
+    request_body {
+        max_size 1100MB
+    }
+
+    reverse_proxy 127.0.0.1:8080
+
+    header {
+        -Server
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+}
