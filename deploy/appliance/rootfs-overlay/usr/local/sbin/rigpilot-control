@@ -1,0 +1,326 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly PROVISION_ROOT="/run/rigpilot-provision"
+readonly ENROLL_FILE="${PROVISION_ROOT}/rigpilot-enroll.json"
+readonly REPLACE_FILE="${PROVISION_ROOT}/rigpilot-replace.json"
+readonly RETRY_MARKER="${PROVISION_ROOT}/.rigpilot-enrollment-retry"
+readonly STATE_FILE="/var/lib/rigpilot-agent/state.json"
+readonly CONFIG_FILE="/etc/rigpilot-agent/config.json"
+readonly REGISTRATION_JOURNAL="/var/lib/rigpilot-agent/firstboot-registration.json"
+
+usage() {
+    cat <<'EOF'
+Usage: rigpilot-control COMMAND
+
+Commands:
+  status       Show RigPilotOS, Agent and GPU status
+  logs         Follow Agent logs (Ctrl+C to stop)
+  start        Start RigPilot Agent
+  stop         Stop RigPilot Agent (does not power off the host)
+  restart      Restart RigPilot Agent
+  driver       Show NVIDIA 615/NVML/OpenCL diagnostics
+  pci-bar      Diagnose NVIDIA PCI BAR/driver state
+  pci-recovery Schedule pci=realloc=on for the next boot only
+  pci-fallback Schedule the riskier ACPI fallback for the next boot only
+  network      Show local addresses and default route
+  enrollment   Show the removable-media registration instructions
+  enroll       Interactively enter a new one-time enrollment code
+  enroll-media Retry registration/inheritance or finish pending recovery
+EOF
+}
+
+as_root() {
+    if [[ "${EUID}" -eq 0 ]]; then
+        exec "$@"
+    fi
+    exec sudo -- "$@"
+}
+
+require_root() {
+    if [[ "${EUID}" -ne 0 ]]; then
+        exec sudo -- "$0" "$@"
+    fi
+}
+
+check_registration_media() {
+    [[ -d "${PROVISION_ROOT}" && ! -L "${PROVISION_ROOT}" ]] || {
+        printf '未找到已挂载的 RIGPILOT 注册分区：%s\n' "${PROVISION_ROOT}" >&2
+        exit 1
+    }
+    mountpoint --quiet -- "${PROVISION_ROOT}" || {
+        printf 'RIGPILOT 注册分区尚未挂载，请检查启动盘。\n' >&2
+        exit 1
+    }
+    [[ ! -L "${ENROLL_FILE}" && ! -L "${REPLACE_FILE}" ]] || {
+        printf '注册文件不能是符号链接。\n' >&2
+        exit 1
+    }
+}
+
+run_registration_service() {
+    local start_status=0 service_status
+    systemctl reset-failed rigpilot-firstboot-enroll.service >/dev/null 2>&1 || true
+    systemctl start rigpilot-firstboot-enroll.service || start_status=$?
+    service_status="$(systemctl show --property=ExecMainStatus --value \
+        rigpilot-firstboot-enroll.service 2>/dev/null || true)"
+    case "${service_status}" in
+        0)
+            # ExecMainStatus may still describe an earlier run when start fails.
+            if [[ "${start_status}" -ne 0 ]]; then
+                printf '注册服务启动失败（systemctl=%s），不能确认本次注册结果。\n' "${start_status}" >&2
+                return 1
+            fi
+            if [[ -s "${STATE_FILE}" ]]; then
+                printf '注册成功，RigPilot Agent 已安装并启动。\n'
+                return 0
+            fi
+            printf '注册服务已完成，但未确认 Agent 身份；请运行：sudo rigpilot-control enroll-media\n' >&2
+            return 1
+            ;;
+        75)
+            printf '暂时无法完成注册或恢复，现有注册信息已保留。\n' >&2
+            printf '稍后重试：sudo rigpilot-control enroll-media\n' >&2
+            return 75
+            ;;
+        78)
+            printf '注册文件、注册码或本机状态不匹配，严格校验已拒绝继续。\n' >&2
+            printf '请查看：journalctl -u rigpilot-firstboot-enroll.service -n 80 --no-pager\n' >&2
+            return 78
+            ;;
+        *)
+            printf '注册服务异常退出（systemctl=%s，Agent=%s）。\n' \
+                "${start_status}" "${service_status:-unknown}" >&2
+            printf '请查看：journalctl -u rigpilot-firstboot-enroll.service -n 80 --no-pager\n' >&2
+            return 1
+            ;;
+    esac
+}
+
+interactive_enroll() {
+    local token name="" confirmation=""
+    require_root enroll
+    check_registration_media
+    [[ ! -e "${STATE_FILE}" && ! -L "${STATE_FILE}" ]] || {
+        printf '本机已经存在 Agent 身份，禁止再次使用新设备注册码。\n' >&2
+        exit 1
+    }
+    [[ ! -e "${REGISTRATION_JOURNAL}" && ! -L "${REGISTRATION_JOURNAL}" ]] || {
+        printf '检测到未完成的注册事务，请使用：sudo rigpilot-control enroll-media\n' >&2
+        exit 1
+    }
+    [[ ! -e "${REPLACE_FILE}" ]] || {
+        printf '检测到设备继承文件，请使用：sudo rigpilot-control enroll-media\n' >&2
+        exit 1
+    }
+    [[ -r /dev/tty && -w /dev/tty ]] || {
+        printf '该操作需要本地交互终端。\n' >&2
+        exit 1
+    }
+
+    IFS= read -r -s -p '请输入控制端生成的一次性注册码：' token </dev/tty
+    printf '\n' >/dev/tty
+    [[ "${token}" =~ ^rpe_[A-Za-z0-9_-]{43}$ ]] || {
+        token=""
+        printf '注册码格式不正确。\n' >&2
+        exit 1
+    }
+    if [[ -e "${CONFIG_FILE}" || -L "${CONFIG_FILE}" ]]; then
+        # A positively rejected first exchange keeps the canonical config.
+        # A corrected token must reuse its exact name; changing it would make
+        # firstboot reject an otherwise valid retry as an identity mismatch.
+        name="$(python3 - "${CONFIG_FILE}" <<'PY_NAME'
+import json
+import os
+import stat
+import sys
+import unicodedata
+
+flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+fd = os.open(sys.argv[1], flags)
+with os.fdopen(fd, "r", encoding="utf-8-sig") as handle:
+    info = os.fstat(handle.fileno())
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077:
+        raise SystemExit("retained Agent config is unsafe")
+    document = json.load(handle)
+if not isinstance(document, dict):
+    raise SystemExit("retained Agent config is invalid")
+value = document.get("name")
+if value is not None and (
+    not isinstance(value, str)
+    or not 1 <= len(value) <= 80
+    or value != value.strip()
+    or value != unicodedata.normalize("NFC", value)
+    or any(unicodedata.category(char).startswith("C") for char in value)
+):
+    raise SystemExit("retained device name is invalid")
+sys.stdout.write(value or "")
+PY_NAME
+)"
+        printf '沿用首次注册时的设备名称；本次仅更换注册码。\n' >/dev/tty
+    else
+        IFS= read -r -p '设备名称/备注（可留空）：' name </dev/tty
+    fi
+
+    if [[ -e "${ENROLL_FILE}" || -e "${RETRY_MARKER}" ]]; then
+        printf '检测到旧的未完成注册文件。若要用新注册码替换，请输入“替换”、REPLACE 或 Y（无中文输入法可用英文）：' >/dev/tty
+        IFS= read -r confirmation </dev/tty
+        [[ "${confirmation}" == '替换' || "${confirmation}" == 'REPLACE' ||
+           "${confirmation}" == 'Y' ]] || {
+            token=""
+            printf '已取消；也可直接重试旧文件：sudo rigpilot-control enroll-media\n' >&2
+            exit 1
+        }
+    fi
+
+    # The secret travels only through a private file descriptor. It is never
+    # an argv element, environment variable or shell-history entry.
+    python3 - "${ENROLL_FILE}" "${name}" 3<<<"${token}" <<'PY'
+import errno
+import json
+import os
+import re
+import sys
+import unicodedata
+from pathlib import Path
+
+target = Path(sys.argv[1])
+name = sys.argv[2]
+token = os.fdopen(3, "r", encoding="ascii", closefd=True).read().rstrip("\n")
+if re.fullmatch(r"rpe_[A-Za-z0-9_-]{43}", token) is None:
+    raise SystemExit("invalid enrollment token")
+if name:
+    if (
+        name != name.strip()
+        or name != unicodedata.normalize("NFC", name)
+        or not 1 <= len(name) <= 80
+        or any(unicodedata.category(char).startswith("C") for char in name)
+    ):
+        raise SystemExit("invalid device name")
+
+document = {"schema": "rigpilot.enrollment.v1", "enrollment_token": token}
+if name:
+    document["name"] = name
+temporary = target.with_name(f".{target.name}.manual-{os.getpid()}")
+flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
+if hasattr(os, "O_NOFOLLOW"):
+    flags |= os.O_NOFOLLOW
+descriptor = os.open(temporary, flags, 0o600)
+try:
+    with os.fdopen(descriptor, "w", encoding="utf-8", closefd=True) as handle:
+        json.dump(document, handle, ensure_ascii=False, separators=(",", ":"))
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, target)
+    try:
+        directory = os.open(target.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    except OSError as exc:
+        if exc.errno not in {errno.EINVAL, errno.EROFS}:
+            raise
+finally:
+    try:
+        temporary.unlink()
+    except FileNotFoundError:
+        pass
+PY
+    token=""
+    rm -f -- "${RETRY_MARKER}"
+    run_registration_service
+}
+
+retry_media_enrollment() {
+    require_root enroll-media
+    if [[ ! -e "${ENROLL_FILE}" && ! -L "${ENROLL_FILE}" &&
+          ! -e "${REPLACE_FILE}" && ! -L "${REPLACE_FILE}" &&
+          ( -e "${REGISTRATION_JOURNAL}" || -L "${REGISTRATION_JOURNAL}" ) ]]; then
+        # Media can already be consumed. Only firstboot may validate the journal
+        # phase and committed identity; no removable mount is needed to finish.
+        run_registration_service
+        return $?
+    fi
+    check_registration_media
+    if [[ -e "${ENROLL_FILE}" && -e "${REPLACE_FILE}" ]]; then
+        printf '普通注册文件和设备继承文件不能同时存在。\n' >&2
+        exit 1
+    fi
+    if [[ ! -e "${ENROLL_FILE}" && ! -e "${REPLACE_FILE}" ]]; then
+        printf 'RIGPILOT 分区中没有可重试的注册或继承文件。\n' >&2
+        exit 1
+    fi
+    run_registration_service
+}
+
+case "${1:-}" in
+    status)
+        [[ -r /etc/rigpilotos-release ]] && cat /etc/rigpilotos-release
+        printf '\nAgent:\n'
+        systemctl --no-pager --full status rigpilot-agent.service 2>/dev/null || \
+            printf 'Agent is not installed or not active.\n'
+        printf '\nGPU:\n'
+        if command -v nvidia-smi >/dev/null 2>&1; then
+            nvidia-smi --query-gpu=index,name,driver_version,temperature.gpu,power.draw,power.limit,utilization.gpu,memory.used,memory.total \
+                --format=csv,noheader 2>/dev/null || printf 'NVIDIA driver is installed but no usable GPU was found.\n'
+        else
+            printf 'nvidia-smi is unavailable.\n'
+        fi
+        ;;
+    logs)
+        as_root journalctl -u rigpilot-agent.service -n 200 -f --no-pager
+        ;;
+    start|stop|restart)
+        as_root systemctl "$1" rigpilot-agent.service
+        ;;
+    driver)
+        printf 'Kernel: '; uname -r
+        printf 'Secure Boot: '
+        mokutil --sb-state 2>/dev/null || printf 'unknown\n'
+        if modinfo nvidia >/dev/null 2>&1; then
+            printf 'NVIDIA module version: '; modinfo -F version nvidia | head -n1
+            printf 'NVIDIA module signer: '; modinfo -F signer nvidia | head -n1
+            printf 'NVIDIA module license: '; modinfo -F license nvidia | head -n1
+        else
+            printf 'NVIDIA kernel module is not available.\n'
+        fi
+        nvidia-smi 2>/dev/null || true
+        clinfo -l 2>/dev/null || true
+        ;;
+    pci-bar)
+        exec /usr/libexec/rigpilotos-pci-bar status
+        ;;
+    pci-recovery)
+        exec /usr/libexec/rigpilotos-pci-bar next-recovery
+        ;;
+    pci-fallback)
+        exec /usr/libexec/rigpilotos-pci-bar next-acpi-fallback \
+            --i-understand-the-risk
+        ;;
+    network)
+        ip -brief address
+        printf '\nDefault route:\n'
+        ip route show default
+        ;;
+    enrollment)
+        cat <<'EOF'
+在你自己的 RigPilot 控制端生成一次性设备注册码。
+开机后可直接运行：sudo rigpilot-control enroll
+如 U 盘根目录已有 rigpilot-enroll.json 或 rigpilot-replace.json，运行：
+sudo rigpilot-control enroll-media
+也可在 Windows 可见的 RIGPILOT 分区中复制示例文件后重新启动。
+只有注册、身份确认及 Agent 安装全部成功后，注册码文件才会被删除。
+EOF
+        ;;
+    enroll)
+        interactive_enroll
+        ;;
+    enroll-media)
+        retry_media_enrollment
+        ;;
+    -h|--help|help|'') usage ;;
+    *) usage >&2; exit 2 ;;
+esac
