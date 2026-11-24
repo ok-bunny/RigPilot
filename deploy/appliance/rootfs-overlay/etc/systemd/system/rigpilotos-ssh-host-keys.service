@@ -1,0 +1,13 @@
+[Unit]
+Description=Generate unique RigPilotOS OpenSSH host keys
+After=local-fs.target
+Before=ssh.service
+ConditionPathExists=/usr/sbin/sshd
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ssh-keygen -A
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

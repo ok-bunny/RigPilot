@@ -1,0 +1,13 @@
+[Unit]
+Description=RigPilotOS boot readiness marker
+After=network-online.target systemd-resolved.service rigpilotos-grow-root.service rigpilot-firstboot-enroll.service
+Wants=network-online.target systemd-resolved.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/rigpilotos-smoke-ready
+StandardOutput=journal+console
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch for a RigPilot removable-media registration file
+
+[Path]
+PathChanged=/run/rigpilot-provision/rigpilot-enroll.json
+PathChanged=/run/rigpilot-provision/rigpilot-replace.json
+Unit=rigpilot-firstboot-enroll.service
+
+[Install]
+WantedBy=multi-user.target

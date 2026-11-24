@@ -1,0 +1,19 @@
+[Unit]
+# Since image 0.2.12 the NVIDIA driver installs from the pinned XFree86 .run
+# archive.  The .run installer ships the nvidia-persistenced binary but no
+# systemd unit, while every 0.2.11-and-earlier deb-built appliance ran the
+# persistence daemon enabled.  Keep that runtime contract: the daemon holds
+# device state while no compute client is using it.  This is not a guarantee
+# against PCIe link loss, hardware faults or Xid 79; those require per-device
+# evidence and must not be classified as fixed merely because this unit runs.
+# The rigpilotos-hardware drop-in adds the per-boot NVIDIA guard ordering.
+Description=NVIDIA Persistence Daemon
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/nvidia-persistenced
+ExecStopPost=/bin/rm -rf /var/run/nvidia-persistenced
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

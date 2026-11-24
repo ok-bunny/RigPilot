@@ -1,0 +1,14 @@
+[Unit]
+Description=RigPilotOS conditional NVIDIA module guard
+After=local-fs.target
+Before=nvidia-persistenced.service nvidia-powerd.service
+Before=rigpilot-firstboot-enroll.service rigpilot-agent.service
+Before=rigpilotos-smoke-ready.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/rigpilotos-nvidia-guard
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

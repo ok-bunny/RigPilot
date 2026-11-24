@@ -1,0 +1,23 @@
+[Unit]
+Description=RigPilot appliance one-time enrollment
+After=network-online.target run-rigpilot\x2dprovision.mount
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Media and journal existence only schedule work; firstboot verifies their binding.
+ExecCondition=/bin/sh -c 'test -e /run/rigpilot-provision/.rigpilot-enrollment-retry || test -L /run/rigpilot-provision/.rigpilot-enrollment-retry || test -e /run/rigpilot-provision/rigpilot-enroll.json || test -L /run/rigpilot-provision/rigpilot-enroll.json || test -e /run/rigpilot-provision/rigpilot-replace.json || test -L /run/rigpilot-provision/rigpilot-replace.json || test -e /var/lib/rigpilot-agent/firstboot-registration.json || test -L /var/lib/rigpilot-agent/firstboot-registration.json'
+ExecStart=/usr/libexec/rigpilot-firstboot
+SuccessExitStatus=75
+EnvironmentFile=-/etc/rigpilotos-controller.env
+User=root
+Group=root
+UMask=0077
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=true
+NoNewPrivileges=true
+TimeoutStartSec=20min
+
+[Install]
+WantedBy=multi-user.target

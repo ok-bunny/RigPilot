@@ -1,0 +1,23 @@
+[Unit]
+Description=Expand the RigPilotOS root filesystem to its destination disk
+# Retry transient early-boot disk enumeration without blocking network readiness.
+After=local-fs.target systemd-udev-trigger.service
+Before=rigpilot-firstboot-enroll.service
+ConditionPathExists=!/var/lib/rigpilotos/root-grown
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/rigpilotos-grow-root
+User=root
+Group=root
+UMask=0022
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=true
+# Retries inside the helper stay well below this bound.  A failing disk makes
+# the unit fail without blocking boot: nothing Requires it and
+# rigpilotos-smoke-ready no longer gates on its result.
+TimeoutStartSec=5min
+
+[Install]
+WantedBy=multi-user.target

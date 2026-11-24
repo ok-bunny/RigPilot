@@ -1,0 +1,12 @@
+[Unit]
+Description=Retry RigPilot appliance enrollment after network failures
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=2min
+AccuracySec=15s
+Unit=rigpilot-firstboot-enroll.service
+Persistent=false
+
+[Install]
+WantedBy=timers.target
