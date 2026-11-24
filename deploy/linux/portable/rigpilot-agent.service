@@ -1,0 +1,28 @@
+[Unit]
+Description=RigPilot outbound device agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/lib/rigpilot-agent
+ExecStart=/opt/rigpilot-agent/RigPilotAgentLauncher.sh --config /etc/rigpilot-agent/config.json
+Restart=on-failure
+RestartSec=8
+User=root
+Group=root
+UMask=0077
+# Managed miners run in their own POSIX session.  Stopping/updating only the
+# Agent must not kill a currently verified miner in the same systemd cgroup.
+KillMode=process
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/rigpilot-agent
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=multi-user.target

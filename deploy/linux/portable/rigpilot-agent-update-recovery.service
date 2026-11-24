@@ -1,0 +1,25 @@
+[Unit]
+Description=Recover an interrupted RigPilot Agent online update
+After=local-fs.target
+# The timer is only a transaction recovery mechanism.  Starting a Python
+# helper every minute when no update exists adds needless I/O on USB systems.
+# The leading pipes make these two conditions an OR group.
+ConditionPathExists=|/opt/rigpilot-agent/pending-update.json
+ConditionPathExists=|/opt/rigpilot-agent/updater-state.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/rigpilot-agent/RigPilotAgentUpdater.py recover --program-root /opt/rigpilot-agent --data-root /var/lib/rigpilot-agent
+# Recovery may legitimately restart the Agent and perform two bounded status
+# probes.  This bounds terminable userspace/systemctl stalls while leaving
+# headroom for that healthy slow path.
+TimeoutStartSec=105s
+RuntimeMaxSec=105s
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/rigpilot-agent /var/lib/rigpilot-agent /run/lock
